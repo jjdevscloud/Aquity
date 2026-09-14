@@ -16,13 +16,17 @@ not this description.
 
 ```shell
 npm install
-cp .env.example .env   # fill in RPC url, chain id, deployed addresses
-npm run codegen         # generates ponder-env.d.ts — commit it after
+cp .env.example .env.local   # fill in RPC url, chain id, deployed addresses
+npm run codegen               # generates ponder-env.d.ts — commit it after
 npm run dev
 ```
 
+Ponder only reads `.env.local` (not plain `.env` — this tripped up the first
+real run of this indexer, see git history), so the file must be named
+`.env.local`.
+
 Requires Node.js ≥22 and a Postgres 14–17 database (`DATABASE_URL` in
-`.env`) — see [ponder.sh/docs/requirements](https://ponder.sh/docs/requirements).
+`.env.local`) — see [ponder.sh/docs/requirements](https://ponder.sh/docs/requirements).
 
 ## Testing against a real local chain
 

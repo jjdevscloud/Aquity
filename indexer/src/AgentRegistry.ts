@@ -4,7 +4,11 @@ import { agentIdentity } from "ponder:schema";
 ponder.on("AgentRegistry:AgentRegistered", async ({ event, context }) => {
   // xHandle isn't in the event (kept out to save gas) — one extra read here,
   // once per agent ever registered, not per block.
-  const onchainAgent = await context.client.readContract({
+  // agents(tokenId) returns an unnamed tuple in this order (viem doesn't
+  // expose multi-output reads as named fields even though the ABI names
+  // them): [ticker, name, agentId, agentKey, xHandle, pair, agentToken,
+  // registeredAt].
+  const [, , , , xHandle] = await context.client.readContract({
     abi: context.contracts.AgentRegistry.abi,
     address: event.log.address,
     functionName: "agents",
@@ -18,13 +22,13 @@ ponder.on("AgentRegistry:AgentRegistered", async ({ event, context }) => {
       tokenId: event.args.tokenId,
       owner: event.args.owner,
       agentId: event.args.agentId,
-      xHandle: onchainAgent.xHandle,
+      xHandle,
       pairAddress: event.args.pair,
       agentTokenAddress: event.args.agentToken,
       registeredAt: event.block.timestamp,
     })
     .onConflictDoUpdate({
       owner: event.args.owner,
-      xHandle: onchainAgent.xHandle,
+      xHandle,
     });
 });
