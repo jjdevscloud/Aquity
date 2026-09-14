@@ -33,6 +33,11 @@ export default createConfig({
     robinhood: {
       id: chainId,
       rpc: rpcUrl,
+      // Without this, Ponder auto-shrinks the eth_getLogs range based on
+      // error messages it sees (it dropped to 8-9 blocks after early
+      // failures against the public RPC), which then fires enough parallel
+      // requests to trip Alchemy's free-tier rate limit. Pin it explicitly.
+      ethGetLogsBlockRange: 2000,
     },
   },
   contracts: {
