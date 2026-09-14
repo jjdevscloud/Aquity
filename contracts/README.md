@@ -5,18 +5,21 @@ Foundry project for AQUITY-SPEC.md's contract set.
 - **Phase 1** — the Splitter alone: one `pay()` call splits a job payment
   between the builder and the agent's Vault, swapping the vault share into
   the paired stock token.
-- **Phase 2** (current) — registry and launch: AgentRegistry, Launcher,
-  Vesting. One `Launcher.launch()` call creates the agent's token through a
-  third-party launchpad, registers its on-chain identity, makes the first
-  buy, and locks the builder's allocation.
+- **Phase 2** — registry and launch: AgentRegistry, Launcher, Vesting. One
+  `Launcher.launch()` call creates the agent's token through a third-party
+  launchpad, registers its on-chain identity, makes the first buy, and locks
+  the builder's allocation.
+- **Phase 3** (current) — distribution: FeeRouter, Distributor. FeeRouter
+  claims and splits trading fees; Distributor pays the Vault's holdings out
+  to holders via posted Merkle roots.
 
 ## Contracts
 
 - `src/Splitter.sol` — receives job payments, splits by `vaultShareBps`, swaps
   the vault share via `ISwapRouter` and deposits it into `Vault`.
-- `src/Vault.sol` — holds one agent's paired stock token. Deposit-only; no
-  withdrawal path for the agent or builder (spec §2.3, "Never touch the vault").
-  Release-to-holders lands in Phase 3 with the Distributor.
+- `src/Vault.sol` — holds one agent's paired stock token. The only way money
+  leaves is `release`, callable only by `distributor`; there is no path for
+  the agent or builder to withdraw (spec §2.3, "Never touch the vault").
 - `src/AgentRegistry.sol` — ERC-721 identity per agent. `register()` (callable
   only by `Launcher`) checks an EIP-712 signature binding the agent key to the
   owner wallet, and a second EIP-712 signature from a trusted `verifier`
@@ -34,8 +37,19 @@ Foundry project for AQUITY-SPEC.md's contract set.
 - `src/interfaces/ILaunchpadFactory.sol` — minimal stand-in for the
   third-party launchpad factory/pool. Reshape to match the real ABI (Robinhood
   Chain's own launchpad, or pump.fun Custom Pairs) before deploying for real.
-- `src/mocks/` — `MockERC20` / `MockRouter` / `MockLaunchpadFactory`, test-only,
-  not deployed.
+- `src/FeeRouter.sol` — claims accrued trading fees from `IFeeEscrow` and
+  splits them by `feeSplitBps` between the Vault (holder share) and the
+  agent's own wallet. No swap leg — fees already arrive in the paired stock.
+- `src/Distributor.sol` — pays the Vault's holdings out to holders. Computing
+  a *time-weighted* balance from historical Transfer logs is an off-chain
+  indexing job, not something Solidity can do; the indexer posts a Merkle
+  root per epoch via `postRoot` (pulling exactly that epoch's total out of
+  the Vault), and holders either `claim` individually or get batch-pushed by
+  `sweep` once their allocation clears `dustThreshold` (spec §11.5).
+- `src/interfaces/IFeeEscrow.sol` — minimal stand-in for the launchpad's
+  trading-fee escrow. Reshape to match the real ABI once confirmed.
+- `src/mocks/` — `MockERC20` / `MockRouter` / `MockLaunchpadFactory` /
+  `MockFeeEscrow`, test-only, not deployed.
 
 ## What's not built yet
 
@@ -43,8 +57,11 @@ Foundry project for AQUITY-SPEC.md's contract set.
   code, signing the `verifier` attestation) — `AgentRegistry` only verifies
   the resulting signature on-chain.
 - The revenue oracle/indexer that would call `Vesting.reportRevenue()` with
-  real graded numbers.
-- FeeRouter, Distributor (Phase 3).
+  real graded numbers, or compute Distributor's time-weighted Merkle trees
+  and call `postRoot`.
+- Revenue grading / anti-circularity weighting (spec §3.4) — not enforced
+  anywhere on-chain; it's an indexer-side computation before revenue ever
+  reaches `Splitter.pay()` or a `Vesting.reportRevenue()` call.
 
 ## Before deploying anything real
 
@@ -72,4 +89,5 @@ then run against `--rpc-url robinhood` — omit `--broadcast` for a dry run:
 ```shell
 forge script script/DeploySplitter.s.sol --rpc-url robinhood --broadcast --verify
 forge script script/DeployRegistryAndLauncher.s.sol --rpc-url robinhood --broadcast --verify
+forge script script/DeployFeeRouterAndDistributor.s.sol --rpc-url robinhood --broadcast --verify
 ```
