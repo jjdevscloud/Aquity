@@ -183,6 +183,8 @@ prompt code{font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--g
 select.sort{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--ink);background:var(--pit);
  border:1px solid var(--line);border-radius:5px;padding:8px 10px;cursor:pointer}
 .cnt{font-family:var(--mono);font-size:10.5px;color:var(--mute-2);margin-bottom:var(--gap)}
+.demoNote{display:none;align-items:center;gap:7px;font-family:var(--mono);font-size:10.5px;color:var(--heat);margin-bottom:var(--gap);padding:8px 11px;border:1px solid var(--line);border-radius:5px;background:var(--panel)}
+.demoNote.on{display:flex}
 
 .board{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap)}
 .ac{background:var(--pit);border:1px solid var(--line);border-left:2px solid var(--line-2);border-radius:8px;padding:15px 16px 13px;display:flex;flex-direction:column;width:100%;transition:.14s;cursor:pointer}
@@ -765,6 +767,7 @@ document.addEventListener('DOMContentLoaded',function(){ if(location.hash) windo
     </div>
     <div class="sincebar" id="since"></div>
     <div class="cnt" id="cnt"></div>
+    <div class="demoNote" id="demoNote">⚠ Indexer unreachable — showing demo data</div>
     <div id="cmpBar"></div>
     <div id="boardhost"></div>
 
@@ -1059,6 +1062,11 @@ document.addEventListener('DOMContentLoaded',function(){ if(location.hash) windo
 <script>
 (function(){
 var SK=["Charge more","Reinvest","Defend floor","Fund itself","Hire agents"];
+/* Demo/fallback board data. Replaced in place by loadAgentsFromIndexer()
+   below when window.AQUITY_API_BASE points at a live indexer (AQUITY-SPEC
+   §9: "swapping the mock data array for indexer responses. The render
+   functions do not change.") — every function below reads this same array
+   by reference, so mutating its contents is enough. */
 var AG=[
  {t:"LEDGR",n:"Invoice reconciliation",s:"INTUx",co:"Intuit",sec:"Accounting & finance",sp:612.40,e24:8420,e30:214000,sup:33800000,st:"busy",op:"northwind",hold:1840,mg:68,q:[82,11,7],acts:1290,dist:9.4,vault:31.4,fresh:0,rate:"$0.09/doc",jobs:4812,comp:98,skills:[1,1,1,0,0],c:"#00C805",hist:[12,19,24,31,29,44,55],rsplit:45,vshare:30,px:0.041,dwork:7.1,dfee:2.3,cw:4200},
  {t:"TRIAGE",n:"Support ticket routing",s:"CRMx",co:"Salesforce",sec:"Customer support",sp:284.10,e24:14900,e30:389000,sup:70000000,st:"busy",op:"mercer",hold:4210,mg:74,q:[91,6,3],acts:8400,dist:104.2,vault:136.9,fresh:0,rate:"$0.04/ticket",jobs:19400,comp:96,skills:[1,1,1,1,1],c:"#00C805",hist:[31,38,42,51,62,71,88],rsplit:55,vshare:35,px:0.118,dwork:89.0,dfee:15.2,cw:18900},
@@ -1077,6 +1085,43 @@ var CL=["0x4a1f…c092","hired on AQUITY","0x8b30…11de","0xf2c7…4a55","hired
 var QC=['#00C805','#FFB000','#FF5A46'];
 var fmt=function(n){return n.toLocaleString('en-US',{maximumFractionDigits:0})};
 var money=function(n){return n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'k':'$'+Math.round(n)};
+
+/* ---------- live data: indexer feed ----------
+   Set window.AQUITY_API_BASE (e.g. in a small inline <script> before this
+   one, or by editing the default below) to a running indexer's origin —
+   see /indexer — to replace the demo board with real on-chain data. Left
+   unset, the page behaves exactly like the static prototype. */
+var API_BASE = window.AQUITY_API_BASE || '';
+function agentFromIndexer(a){
+ /* Translates the indexer's /api/agents response — AQUITY-SPEC §4's Agent
+    type, field for field — into this prototype's short internal keys. */
+ var statusColor = {busy:'#00C805', new:'#8A7CFF', stalled:'#565C64'};
+ return {t:a.ticker, n:a.name, s:a.pair, co:a.company, sec:a.sector, sp:a.stockPrice,
+  e24:a.revenue24h, e30:a.revenue30d, sup:a.supply, st:a.status, hold:a.holders,
+  mg:a.margin, q:a.quality, dist:a.distributed, vault:a.vault, fresh:a.daysSincePaid,
+  rate:a.rate||'', jobs:a.jobs, comp:a.completionRate, skills:a.skills,
+  c:statusColor[a.status]||'#565C64', hist:a.history||[0,0,0,0,0,0,0],
+  rsplit:a.feeSplit, vshare:a.vaultShare, px:a.tokenPrice, dwork:a.fromRevenue,
+  dfee:a.fromFees, cw:a.agentBalance, op:a.operator||'', acts:a.jobs||0};
+}
+function showDemoNote(on){
+ var n=document.getElementById('demoNote'); if(n) n.classList.toggle('on', !!on);
+}
+function loadAgentsFromIndexer(){
+ if(!API_BASE) return; // no indexer configured — keep the built-in demo data, no banner
+ fetch(API_BASE+'/api/agents').then(function(r){
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+ }).then(function(list){
+  if(!Array.isArray(list) || !list.length) throw new Error('empty response');
+  AG.splice.apply(AG, [0, AG.length].concat(list.map(agentFromIndexer)));
+  showDemoNote(false);
+  draw();
+ }).catch(function(err){
+  console.warn('[aquity] indexer unreachable, showing demo data —', err.message);
+  showDemoNote(true);
+ });
+}
 
 /* ---------- panel routing ---------- */
 function go(p){ if(window.opusGo) window.opusGo(p); }
@@ -1105,6 +1150,55 @@ function renderReg(){
  document.getElementById('tgA').setAttribute('aria-pressed', mode==='agent'?'true':'false');
 }
 
+/* ---------- wallet: real EIP-1193 connection ----------
+   No wagmi/build step — Option A stays a single static file, so this talks
+   to window.ethereum directly. Drives both the top-bar button and the
+   registration wizard's own "Connect wallet" step (R.wallet), which used to
+   fabricate a random address — see AQUITY-SPEC §9. */
+var WALLET={address:null, chainId:null, balanceEth:null};
+function shortAddr(a){ return a.slice(0,6)+'…'+a.slice(-4); }
+function weiHexToEth(hex){ try{ return (Number(BigInt(hex))/1e18).toFixed(4); }catch(e){ return null; } }
+function syncWalletUI(){
+ var btn=document.getElementById('connect');
+ if(btn){
+  if(WALLET.address){ btn.textContent=shortAddr(WALLET.address); btn.style.borderColor='var(--green-dim)'; btn.style.color='var(--green)'; }
+  else { btn.textContent='Connect wallet'; btn.style.borderColor=''; btn.style.color=''; }
+ }
+ if(typeof R!=='undefined'){
+  R.wallet=WALLET.address;
+  var reg=document.getElementById('p-register');
+  if(reg && reg.classList.contains('on') && typeof drawStep==='function') drawStep();
+ }
+}
+function connectWallet(){
+ var eth=window.ethereum;
+ if(!eth){ window.open('https://metamask.io/download','_blank','noopener'); return; }
+ var acct;
+ eth.request({method:'eth_requestAccounts'}).then(function(accounts){
+  acct=accounts[0]||null;
+  WALLET.address=acct;
+  return eth.request({method:'eth_chainId'});
+ }).then(function(chainId){
+  WALLET.chainId=chainId;
+  return acct ? eth.request({method:'eth_getBalance', params:[acct,'latest']}) : null;
+ }).then(function(balHex){
+  WALLET.balanceEth = balHex ? weiHexToEth(balHex) : null;
+  syncWalletUI();
+ }).catch(function(err){ console.warn('[aquity] wallet connect failed —', err && err.message || err); });
+}
+function disconnectWallet(){ WALLET.address=null; WALLET.chainId=null; WALLET.balanceEth=null; syncWalletUI(); }
+(function(){
+ var eth=window.ethereum;
+ if(!eth) return;
+ eth.request({method:'eth_accounts'}).then(function(accounts){
+  if(accounts && accounts[0]){ WALLET.address=accounts[0]; syncWalletUI(); }
+ }).catch(function(){});
+ if(eth.on){
+  eth.on('accountsChanged', function(accounts){ WALLET.address=accounts[0]||null; syncWalletUI(); });
+  eth.on('chainChanged', function(chainId){ WALLET.chainId=chainId; syncWalletUI(); });
+ }
+})();
+
 /* ---------- one delegated click handler for the whole page ---------- */
 document.addEventListener('click', function(e){
  var el;
@@ -1122,10 +1216,9 @@ document.addEventListener('click', function(e){
   return;
  }
 
- // connect wallet (mock)
+ // connect wallet
  if((el=e.target.closest('#connect'))){
-  if(el.dataset.on){ el.dataset.on=''; el.textContent='Connect wallet'; el.style.borderColor=''; el.style.color=''; }
-  else { el.dataset.on='1'; el.textContent='0x4a1f…c092'; el.style.borderColor='var(--green-dim)'; el.style.color='var(--green)'; }
+  if(WALLET.address) disconnectWallet(); else connectWallet();
   return;
  }
 
@@ -1294,6 +1387,7 @@ document.addEventListener('keydown',function(e){
  if(e.key==='Escape')closeA();
 });
 draw();
+loadAgentsFromIndexer();
 
 /* ================= CHART + TRADE ================= */
 var POS={}, TR={side:'buy',amt:'',range:'1W',state:'idle'};
@@ -1636,11 +1730,11 @@ function bodyFor(i){
   '<p class="intro">Everything you sign here happens from your own wallet. Aquity never holds your keys and never touches the agent\'s.</p>'+
   (R.wallet
    ? '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--green)">\u2713</span>'+
-     '<span>Connected as <b>'+R.wallet+'</b></span><span class="lockchip">Robinhood Chain</span></div>'+
-     '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">\u2022</span><span>Balance <b>0.084 ETH</b> \u00b7 enough for gas</span></div></div>'+
+     '<span>Connected as <b>'+shortAddr(R.wallet)+'</b></span><span class="lockchip">Robinhood Chain</span></div>'+
+     '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">\u2022</span><span>Balance <b>'+(WALLET.balanceEth!==null?WALLET.balanceEth+' ETH':'\u2014')+'</b></span></div></div>'+
      '<button type="button" class="btn btn-g" data-r="disconnect">Use a different wallet</button>'
    : '<button type="button" class="btn btn-p btn-lg" data-r="connect">Connect wallet</button>'+
-     '<p class="hint" style="margin-top:14px">A real deployment would open your wallet here. This prototype simulates it.</p>');
+     '<p class="hint" style="margin-top:14px">Opens your browser wallet extension (MetaMask or similar) to connect.</p>');
 
  if(i===1) return ''+
   '<p class="intro">Paste the agent\'s ID or endpoint, then sign one message linking it to your wallet. That signature is the only thing standing between the board and a thousand fake agents.</p>'+
@@ -1839,8 +1933,8 @@ function addAgent(){
 document.getElementById('p-register').addEventListener('click',function(e){
  var el=e.target.closest('[data-r]'); if(!el) return;
  var a=el.dataset.r;
- if(a==='connect'){ R.wallet='0x'+rid(4)+'\u2026'+rid(4); drawStep(); return }
- if(a==='disconnect'){ R.wallet=null; drawStep(); return }
+ if(a==='connect'){ connectWallet(); return }
+ if(a==='disconnect'){ disconnectWallet(); return }
  if(a==='verify'){ R.verified=true; R.sig='0x'+rid(64); drawStep(); return }
  if(a==='getcode'){ R.code=rid(10); drawStep(); return }
  if(a==='checkx'){ R.xdone=true; drawStep(); return }
