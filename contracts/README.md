@@ -1,8 +1,14 @@
 # Aquity contracts
 
-Foundry project for AQUITY-SPEC.md's contract set. Phase 1 (current): the
-Splitter alone — one `pay()` call splits a job payment between the builder
-and the agent's Vault, swapping the vault share into the paired stock token.
+Foundry project for AQUITY-SPEC.md's contract set.
+
+- **Phase 1** — the Splitter alone: one `pay()` call splits a job payment
+  between the builder and the agent's Vault, swapping the vault share into
+  the paired stock token.
+- **Phase 2** (current) — registry and launch: AgentRegistry, Launcher,
+  Vesting. One `Launcher.launch()` call creates the agent's token through a
+  third-party launchpad, registers its on-chain identity, makes the first
+  buy, and locks the builder's allocation.
 
 ## Contracts
 
@@ -11,9 +17,34 @@ and the agent's Vault, swapping the vault share into the paired stock token.
 - `src/Vault.sol` — holds one agent's paired stock token. Deposit-only; no
   withdrawal path for the agent or builder (spec §2.3, "Never touch the vault").
   Release-to-holders lands in Phase 3 with the Distributor.
+- `src/AgentRegistry.sol` — ERC-721 identity per agent. `register()` (callable
+  only by `Launcher`) checks an EIP-712 signature binding the agent key to the
+  owner wallet, and a second EIP-712 signature from a trusted `verifier`
+  attesting the X-handle verification post was found — see spec §2.4. Ticker
+  and X handle are each unique and permanent.
+- `src/Launcher.sol` — one transaction: calls the launchpad factory to create
+  the agent token, calls `AgentRegistry.register()`, deploys a `Vesting`
+  contract, makes the first buy with the ETH sent in, routes it to `Vesting`.
+- `src/Vesting.sol` — locks the builder's launch-day token allocation.
+  Releases against cumulative *graded* revenue (spec §3.4), reported by an
+  authorized `reporter` — the real revenue oracle/indexer is Phase 3+ work,
+  so `reporter` is just an admin-set address for now.
 - `src/interfaces/ISwapRouter.sol` — minimal Uniswap-V2-shaped router
   interface. Point `router` at Robinhood Chain's real DEX once confirmed.
-- `src/mocks/` — `MockERC20` / `MockRouter`, test-only, not deployed.
+- `src/interfaces/ILaunchpadFactory.sol` — minimal stand-in for the
+  third-party launchpad factory/pool. Reshape to match the real ABI (Robinhood
+  Chain's own launchpad, or pump.fun Custom Pairs) before deploying for real.
+- `src/mocks/` — `MockERC20` / `MockRouter` / `MockLaunchpadFactory`, test-only,
+  not deployed.
+
+## What's not built yet
+
+- The X-verification backend itself (reading the timeline, generating the
+  code, signing the `verifier` attestation) — `AgentRegistry` only verifies
+  the resulting signature on-chain.
+- The revenue oracle/indexer that would call `Vesting.reportRevenue()` with
+  real graded numbers.
+- FeeRouter, Distributor (Phase 3).
 
 ## Before deploying anything real
 
@@ -35,13 +66,10 @@ forge test -vv
 
 ### Deploy (Robinhood Chain)
 
-Set `ROBINHOOD_RPC_URL` and the env vars documented at the top of
-`script/DeploySplitter.s.sol`, then:
+Set `ROBINHOOD_RPC_URL` and the env vars documented at the top of each script,
+then run against `--rpc-url robinhood` — omit `--broadcast` for a dry run:
 
 ```shell
-# dry run against the RPC without broadcasting
-forge script script/DeploySplitter.s.sol --rpc-url robinhood
-
-# broadcast for real
 forge script script/DeploySplitter.s.sol --rpc-url robinhood --broadcast --verify
+forge script script/DeployRegistryAndLauncher.s.sol --rpc-url robinhood --broadcast --verify
 ```
