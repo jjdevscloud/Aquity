@@ -37,7 +37,7 @@ export default createConfig({
       // error messages it sees (it dropped to 8-9 blocks after early
       // failures against the public RPC), which then fires enough parallel
       // requests to trip Alchemy's free-tier rate limit. Pin it explicitly.
-      ethGetLogsBlockRange: 10_000,
+      ethGetLogsBlockRange: 10,
     },
   },
   contracts: {
