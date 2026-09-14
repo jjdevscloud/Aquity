@@ -4,3 +4,5 @@ broadcast/
 .env
 local-demo-output.json
 local-demo-env.json
+testnet-demo-output.json
+testnet-demo-env.json

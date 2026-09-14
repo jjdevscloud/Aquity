@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "ticker": "YREV",
+    "name": "Rival ops monitoring",
+    "company": "Microsoft",
+    "sector": "Infrastructure ops",
+    "operator": "testnet-demo",
+    "pairSymbol": "MSFTx",
+    "pairAddress": "0xb44D4e9b7Eee6c990c2e06999413132F798cf01d",
+    "agentTokenAddress": "0xAd73eAD1c40c13a2944782CD70Ab81e154FA2a94",
+    "splitterAddress": "0xDeeBB9817e5943095Cc3f1bD63170F4a24823f9D",
+    "vaultAddress": "0xf0be981fEC7564BC6612B2F711ED7b2E1Bb91Ea1",
+    "feeRouterAddress": "0x51D118a567ACD8046B639349cA70D7E398e532D8",
+    "distributorAddress": "0xF273fEa4F02DE5Aa8cEFE08d5465815180F49961",
+    "vestingAddress": "0xb800693b78496803F7fa98B8d6515C09F4c6394F",
+    "startBlock": 119189245
+  }
+]
