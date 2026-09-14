@@ -5,6 +5,9 @@ libs = ["lib"]
 optimizer = true
 optimizer_runs = 200
 solc = "0.8.26"
+# DeployLocalDemo.s.sol writes local-demo-output.json / local-demo-env.json
+# for run-local-demo.ps1 to pick up — see /run-local-demo.ps1.
+fs_permissions = [{ access = "read-write", path = "./" }]
 
 # Robinhood Chain is a standard EVM (Arbitrum Orbit L2), gas in ETH.
 # Fill these in once you have real endpoints/keys — never commit the key itself,

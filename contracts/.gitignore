@@ -2,3 +2,5 @@ out/
 cache/
 broadcast/
 .env
+local-demo-output.json
+local-demo-env.json

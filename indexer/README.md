@@ -24,6 +24,14 @@ npm run dev
 Requires Node.js ≥22 and a Postgres 14–17 database (`DATABASE_URL` in
 `.env`) — see [ponder.sh/docs/requirements](https://ponder.sh/docs/requirements).
 
+## Testing against a real local chain
+
+The fastest way to get real values for everything below, rather than typing
+addresses in by hand: from the repo root, run `.\run-local-demo.ps1`. It
+starts anvil, deploys every contract plus mocks, launches one real demo
+agent, and writes `agents.config.json` for you — see
+`/contracts/README.md`'s "Local end-to-end demo" section.
+
 ## Populating agents.config.json
 
 Registration isn't permissionless yet (AQUITY-SPEC.md §10 Phase 5: "twenty

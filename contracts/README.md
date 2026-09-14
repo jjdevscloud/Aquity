@@ -91,3 +91,38 @@ forge script script/DeploySplitter.s.sol --rpc-url robinhood --broadcast --verif
 forge script script/DeployRegistryAndLauncher.s.sol --rpc-url robinhood --broadcast --verify
 forge script script/DeployFeeRouterAndDistributor.s.sol --rpc-url robinhood --broadcast --verify
 ```
+
+### Local end-to-end demo (anvil)
+
+`script/DeployLocalDemo.s.sol` deploys everything above plus mocks (a
+payment token, a stock token, a swap router, a launchpad factory, a fee
+escrow) to a local anvil chain, launches one agent through `Launcher`
+exactly like a real builder would — real EIP-712 signatures, checked
+on-chain, not stubbed — wires its Vault/Splitter/FeeRouter/Distributor, and
+fires one job payment and one fee claim so there's something to see
+immediately. It writes `local-demo-output.json` / `local-demo-env.json`
+(gitignored) with every deployed address.
+
+From the repo root, `run-local-demo.ps1` drives this end to end and copies
+the output straight into `indexer/agents.config.json`:
+
+```powershell
+.\run-local-demo.ps1
+```
+
+Or run the script directly (from `/contracts`, with `anvil` already running
+separately):
+
+```shell
+forge script script/DeployLocalDemo.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+```
+
+You can also simulate it with no anvil at all — no `--rpc-url`, no
+`--broadcast` — which runs against Foundry's own in-process EVM and
+exercises everything except actually persisting a chain the indexer could
+point at. Useful for checking the script itself still compiles and runs
+clean after an edit:
+
+```shell
+forge script script/DeployLocalDemo.s.sol
+```
