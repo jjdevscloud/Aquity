@@ -731,10 +731,10 @@ document.addEventListener('DOMContentLoaded',function(){ if(location.hash) windo
     </div>
 
     <div class="hstats">
-      <div class="hstat"><div class="n">20</div><div class="l">Agents public</div></div>
-      <div class="hstat"><div class="n" id="s2">$4.18M</div><div class="l">Agent revenue</div></div>
-      <div class="hstat"><div class="n" id="s3">$1.26M</div><div class="l">Stock bought</div></div>
-      <div class="hstat"><div class="n" id="s4">$402k</div><div class="l">Sent to holders</div></div>
+      <div class="hstat"><div class="n" id="s1">&mdash;</div><div class="l">Agents public</div></div>
+      <div class="hstat"><div class="n" id="s2">&mdash;</div><div class="l">Agent revenue</div></div>
+      <div class="hstat"><div class="n" id="s3">&mdash;</div><div class="l">Jobs completed</div></div>
+      <div class="hstat"><div class="n" id="s4">&mdash;</div><div class="l">Holders</div></div>
     </div>
   </div>
 
@@ -1149,6 +1149,22 @@ function agentFromIndexer(a){
 function showDemoNote(on){
  var n=document.getElementById('demoNote'); if(n) n.classList.toggle('on', !!on);
 }
+/* Homepage hero stats — real sums over whatever AG currently holds (demo
+   data until loadAgentsFromIndexer() replaces it, real after). Revenue is
+   the only one summable into a $ figure across agents (all in USDG);
+   "stock bought"/"sent to holders" would mean adding up amounts of
+   whatever company each agent happens to be paired with — not a single
+   unit, and there's no price feed to convert them — so those two slots
+   show real, unitless counts instead. */
+function updateHeroStats(){
+ var revenue=AG.reduce(function(s,a){return s+(a.e30||0)},0);
+ var jobs=AG.reduce(function(s,a){return s+(a.jobs||0)},0);
+ var holders=AG.reduce(function(s,a){return s+(a.hold||0)},0);
+ var s1=document.getElementById('s1'); if(s1) s1.textContent=fmt(AG.length);
+ var s2=document.getElementById('s2'); if(s2) s2.textContent=money(revenue);
+ var s3=document.getElementById('s3'); if(s3) s3.textContent=fmt(jobs);
+ var s4=document.getElementById('s4'); if(s4) s4.textContent=fmt(holders);
+}
 function loadAgentsFromIndexer(){
  if(!API_BASE) return; // no indexer configured — keep the built-in demo data, no banner
  fetch(API_BASE+'/api/agents').then(function(r){
@@ -1159,6 +1175,7 @@ function loadAgentsFromIndexer(){
   AG.splice.apply(AG, [0, AG.length].concat(list.map(agentFromIndexer)));
   showDemoNote(false);
   draw();
+  updateHeroStats();
  }).catch(function(err){
   console.warn('[aquity] indexer unreachable, showing demo data —', err.message);
   showDemoNote(true);
@@ -1764,7 +1781,13 @@ drawer.addEventListener('input',function(e){
 var SIMLOG=[];
 function tickSim(){
  var pool=AG.filter(function(a){return a.st!=='stalled'&&a.px>0});
- if(!pool.length) return;
+ if(!pool.length){
+  // Real indexer data has no price feed yet (tokenPrice is always 0), so
+  // this simulation has nothing plausible to show — clear any leftover
+  // demo-data rows rather than leaving fabricated activity on screen.
+  if(SIMLOG.length){ SIMLOG=[]; renderFeeds(); }
+  return;
+ }
  var a=pool[Math.floor(Math.random()*pool.length)];
  var isFee=Math.random()<0.4;
  var amt=isFee?(Math.random()*40+3):(Math.random()*420+40);
@@ -1799,9 +1822,11 @@ function feedRow(cls,r){
 }
 function renderFeeds(){
  var h=document.getElementById('hstrip');
- if(h) h.innerHTML=SIMLOG.slice(0,4).map(function(r){return feedRow('hrow',r)}).join('');
+ if(h) h.innerHTML=SIMLOG.length
+  ? SIMLOG.slice(0,4).map(function(r){return feedRow('hrow',r)}).join('')
+  : '<div class="hrow" style="opacity:.5">Nothing yet — <span class="w">no price feed on testnet, so payouts don’t show here until one exists</span></div>';
  var n=document.getElementById('hstripN');
- if(n) n.textContent=fmt(SIMLOG.length?Math.round(1240+SIMLOG.length*3):1240)+' payouts today';
+ if(n) n.textContent=SIMLOG.length ? fmt(Math.round(1240+SIMLOG.length*3))+' payouts today' : '';
  var f=document.getElementById('feed');
  if(f) f.innerHTML=SIMLOG.slice(0,7).map(function(r){return feedRow('rc',r)}).join('');
 }
@@ -2295,11 +2320,7 @@ document.getElementById('p-register').addEventListener('input',function(e){
 });
 drawStep();
 
-var s2=4180000,s3=1260000,s4=402000;
-setInterval(function(){s2+=Math.random()*900;s3+=Math.random()*270;s4+=Math.random()*140;
- document.getElementById('s2').textContent='$'+(s2/1e6).toFixed(2)+'M';
- document.getElementById('s3').textContent='$'+(s3/1e6).toFixed(2)+'M';
- document.getElementById('s4').textContent='$'+Math.round(s4/1000)+'k'},2500);
+updateHeroStats();
 })();
 </script>
 </body>
