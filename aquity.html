@@ -614,6 +614,25 @@ footer{border-top:1px solid var(--line);padding:30px 0 36px;background:var(--pit
   .wn{width:25px;height:25px;flex:0 0 25px;font-size:10px}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+
+.wallet-menu{position:fixed;z-index:200;min-width:220px;background:var(--panel);border:1px solid var(--line-2);
+ border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.5);padding:6px;font-family:var(--sans)}
+.wallet-menu .wm-hd{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.02em;color:var(--mute-2);
+ text-transform:uppercase;padding:8px 10px 6px}
+.wallet-menu .wm-addr{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px 10px;
+ border-bottom:1px solid var(--line);margin-bottom:4px}
+.wallet-menu .wm-addr b{font-family:var(--mono);font-size:12.5px;color:var(--ink);font-weight:600}
+.wallet-menu .wm-addr span{font-family:var(--mono);font-size:10.5px;color:var(--mute)}
+.wm-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 10px;border-radius:5px;
+ background:none;border:none;color:var(--ink);font-family:var(--sans);font-size:13px;cursor:pointer;transition:.1s}
+.wm-item:hover{background:var(--panel-2)}
+.wm-item img,.wm-item .wm-fallback-icon{width:20px;height:20px;border-radius:4px;flex:0 0 20px;object-fit:contain}
+.wm-item .wm-fallback-icon{background:var(--line-2);display:flex;align-items:center;justify-content:center;
+ font-family:var(--mono);font-size:10px;color:var(--mute)}
+.wm-item.wm-disconnect{color:var(--red)}
+.wm-item.wm-disconnect:hover{background:rgba(255,90,70,.08)}
+.wm-empty{padding:10px;font-size:12.5px;color:var(--mute);line-height:1.5}
+.wm-empty a{color:var(--green)}
 </style>
 </head>
 <body>
@@ -1174,13 +1193,38 @@ window.addEventListener('eip6963:announceProvider', function(e){
 });
 window.dispatchEvent(new Event('eip6963:requestProvider'));
 
-function discoverEthProvider(){
- if(EIP6963_PROVIDERS.length) return EIP6963_PROVIDERS[0].provider;
- if(window.ethereum) return window.ethereum;
- return null;
+function nameForLegacyProvider(eth){
+ if(eth.isMetaMask) return 'MetaMask';
+ if(eth.isCoinbaseWallet) return 'Coinbase Wallet';
+ if(eth.isPhantom) return 'Phantom';
+ if(eth.isBraveWallet) return 'Brave Wallet';
+ if(eth.isRabby) return 'Rabby';
+ return 'Browser wallet';
+}
+// Merge EIP-6963 announcements (named, de-duped by rdns) with the legacy
+// window.ethereum singleton (or its .providers[] array, when multiple
+// extensions patch onto it) as a fallback so nothing detected gets dropped.
+function getAllProviders(){
+ var list=[];
+ EIP6963_PROVIDERS.forEach(function(p, i){
+  if(!p || !p.provider) return;
+  var id=(p.info && (p.info.rdns || p.info.name)) || ('eip6963:'+i);
+  if(list.some(function(x){ return x.id===id; })) return;
+  list.push({id:id, name:(p.info && p.info.name) || 'Wallet', icon:p.info && p.info.icon, provider:p.provider});
+ });
+ if(window.ethereum){
+  var raw=(window.ethereum.providers && window.ethereum.providers.length) ? window.ethereum.providers : [window.ethereum];
+  raw.forEach(function(eth, i){
+   if(list.some(function(x){ return x.provider===eth; })) return;
+   list.push({id:'legacy:'+nameForLegacyProvider(eth)+':'+i, name:nameForLegacyProvider(eth), icon:null, provider:eth});
+  });
+ }
+ return list;
 }
 
-var WALLET={address:null, chainId:null, balanceEth:null};
+var WALLET={address:null, chainId:null, balanceEth:null, provider:null};
+var WALLET_KEY='aquity_wallet_provider';
+var LISTENED_PROVIDERS=[];
 function shortAddr(a){ return a.slice(0,6)+'…'+a.slice(-4); }
 function weiHexToEth(hex){ try{ return (Number(BigInt(hex))/1e18).toFixed(4); }catch(e){ return null; } }
 function syncWalletUI(){
@@ -1195,45 +1239,120 @@ function syncWalletUI(){
   if(reg && reg.classList.contains('on') && typeof drawStep==='function') drawStep();
  }
 }
-function flashNoWalletFound(btn){
- console.warn('[aquity] no wallet provider found. If an extension is installed, check chrome://extensions -> its "Site access" is not restricted away from this page, and that it is not being shadowed by another wallet extension.');
- if(!btn) return;
- var prev=btn.textContent;
- btn.textContent='No wallet found';
- setTimeout(function(){ if(btn.textContent==='No wallet found') btn.textContent=prev; }, 2600);
+function attachProviderListeners(eth){
+ if(!eth || !eth.on || LISTENED_PROVIDERS.indexOf(eth)!==-1) return;
+ LISTENED_PROVIDERS.push(eth);
+ eth.on('accountsChanged', function(accounts){
+  if(WALLET.provider!==eth) return;
+  WALLET.address=accounts[0]||null;
+  if(!WALLET.address) WALLET.provider=null;
+  syncWalletUI();
+ });
+ eth.on('chainChanged', function(chainId){ if(WALLET.provider===eth){ WALLET.chainId=chainId; syncWalletUI(); } });
 }
-function connectWallet(clickedEl){
+function connectToProvider(entry){
+ var eth=entry.provider, acct;
+ eth.request({method:'eth_requestAccounts'}).then(function(accounts){
+  acct=accounts[0]||null;
+  WALLET.address=acct;
+  WALLET.provider=eth;
+  try{ localStorage.setItem(WALLET_KEY, entry.id); }catch(e){}
+  return eth.request({method:'eth_chainId'});
+ }).then(function(chainId){
+  WALLET.chainId=chainId;
+  return acct ? eth.request({method:'eth_getBalance', params:[acct,'latest']}) : null;
+ }).then(function(balHex){
+  WALLET.balanceEth = balHex ? weiHexToEth(balHex) : null;
+  syncWalletUI();
+  attachProviderListeners(eth);
+ }).catch(function(err){ console.warn('[aquity] wallet connect failed —', err && err.message || err); });
+}
+function disconnectWallet(){
+ WALLET.address=null; WALLET.chainId=null; WALLET.balanceEth=null; WALLET.provider=null;
+ try{ localStorage.removeItem(WALLET_KEY); }catch(e){}
+ syncWalletUI();
+ closeWalletMenu();
+}
+
+/* ---------- wallet picker dropdown ---------- */
+var walletMenuEl=null;
+function closeWalletMenu(){
+ if(!walletMenuEl) return;
+ walletMenuEl.remove();
+ walletMenuEl=null;
+ document.removeEventListener('click', onDocClickCloseWalletMenu, true);
+ window.removeEventListener('resize', closeWalletMenu);
+}
+function onDocClickCloseWalletMenu(e){
+ if(walletMenuEl && !walletMenuEl.contains(e.target) && !e.target.closest('#connect') && !e.target.closest('[data-r="connect"]') && !e.target.closest('[data-r="disconnect"]')) closeWalletMenu();
+}
+function positionWalletMenu(el, anchor){
+ var r=anchor.getBoundingClientRect();
+ var w=Math.max(220, el.offsetWidth);
+ el.style.top=Math.round(r.bottom+8)+'px';
+ el.style.left=Math.round(Math.min(Math.max(8, r.right-w), window.innerWidth-w-8))+'px';
+}
+function openWalletMenu(anchorEl){
  // Providers can announce late (EIP-6963) — re-request once right before
- // connecting, then give it a beat before concluding nothing answered.
+ // building the list, then give it a beat before rendering what answered.
  window.dispatchEvent(new Event('eip6963:requestProvider'));
  setTimeout(function(){
-  var eth=discoverEthProvider();
-  if(!eth){ flashNoWalletFound(clickedEl); return; }
-  var acct;
-  eth.request({method:'eth_requestAccounts'}).then(function(accounts){
-   acct=accounts[0]||null;
-   WALLET.address=acct;
-   return eth.request({method:'eth_chainId'});
-  }).then(function(chainId){
-   WALLET.chainId=chainId;
-   return acct ? eth.request({method:'eth_getBalance', params:[acct,'latest']}) : null;
-  }).then(function(balHex){
-   WALLET.balanceEth = balHex ? weiHexToEth(balHex) : null;
-   syncWalletUI();
-  }).catch(function(err){ console.warn('[aquity] wallet connect failed —', err && err.message || err); });
+  if(walletMenuEl) closeWalletMenu();
+  var providers=getAllProviders();
+  var el=document.createElement('div');
+  el.className='wallet-menu';
+  var html='';
+  if(WALLET.address){
+   html+='<div class="wm-addr"><b>'+shortAddr(WALLET.address)+'</b>'+(WALLET.balanceEth?'<span>'+WALLET.balanceEth+' ETH</span>':'')+'</div>';
+  }
+  html+='<div class="wm-hd">'+(providers.length?'Select a wallet':'No wallet found')+'</div>';
+  if(!providers.length){
+   html+='<div class="wm-empty">No wallet extension detected. If one is installed, check chrome://extensions → its "Site access" is allowed on this page.</div>';
+  } else {
+   providers.forEach(function(p,i){
+    html+='<button type="button" class="wm-item" data-wallet-idx="'+i+'">'+
+     (p.icon ? '<img src="'+p.icon+'" alt="">' : '<span class="wm-fallback-icon">'+(p.name||'W').slice(0,1)+'</span>')+
+     '<span>'+p.name+'</span></button>';
+   });
+  }
+  if(WALLET.address){
+   html+='<button type="button" class="wm-item wm-disconnect" data-wallet-disconnect="1"><span class="wm-fallback-icon">×</span><span>Disconnect</span></button>';
+  }
+  el.innerHTML=html;
+  document.body.appendChild(el);
+  walletMenuEl=el;
+  walletMenuEl.__providers=providers;
+  positionWalletMenu(el, anchorEl);
+  setTimeout(function(){
+   document.addEventListener('click', onDocClickCloseWalletMenu, true);
+   window.addEventListener('resize', closeWalletMenu);
+  }, 0);
  }, 60);
 }
-function disconnectWallet(){ WALLET.address=null; WALLET.chainId=null; WALLET.balanceEth=null; syncWalletUI(); }
+function connectWallet(clickedEl){
+ if(walletMenuEl){ closeWalletMenu(); return; }
+ openWalletMenu(clickedEl);
+}
 (function(){
- var eth=discoverEthProvider();
- if(!eth) return;
- eth.request({method:'eth_accounts'}).then(function(accounts){
-  if(accounts && accounts[0]){ WALLET.address=accounts[0]; syncWalletUI(); }
- }).catch(function(){});
- if(eth.on){
-  eth.on('accountsChanged', function(accounts){ WALLET.address=accounts[0]||null; syncWalletUI(); });
-  eth.on('chainChanged', function(chainId){ WALLET.chainId=chainId; syncWalletUI(); });
- }
+ // Silent auto-reconnect: only to the specific wallet last used (by id),
+ // never to "whichever provider answers first" — that's what caused the
+ // Phantom-by-default bug this picker replaces.
+ setTimeout(function(){
+  var storedId=null;
+  try{ storedId=localStorage.getItem(WALLET_KEY); }catch(e){}
+  if(!storedId) return;
+  var match=getAllProviders().filter(function(p){ return p.id===storedId; })[0];
+  if(!match) return;
+  var eth=match.provider;
+  eth.request({method:'eth_accounts'}).then(function(accounts){
+   if(accounts && accounts[0]){
+    WALLET.address=accounts[0];
+    WALLET.provider=eth;
+    attachProviderListeners(eth);
+    syncWalletUI();
+   }
+  }).catch(function(){});
+ }, 200);
 })();
 
 /* ---------- one delegated click handler for the whole page ---------- */
@@ -1253,9 +1372,20 @@ document.addEventListener('click', function(e){
   return;
  }
 
+ // wallet picker menu items
+ if((el=e.target.closest('.wallet-menu .wm-item'))){
+  if(el.hasAttribute('data-wallet-disconnect')){ disconnectWallet(); return; }
+  var idx=Number(el.getAttribute('data-wallet-idx'));
+  var providers=walletMenuEl && walletMenuEl.__providers;
+  var entry=providers && providers[idx];
+  closeWalletMenu();
+  if(entry) connectToProvider(entry);
+  return;
+ }
+
  // connect wallet
  if((el=e.target.closest('#connect'))){
-  if(WALLET.address) disconnectWallet(); else connectWallet(el);
+  connectWallet(el);
   return;
  }
 
@@ -1971,7 +2101,7 @@ document.getElementById('p-register').addEventListener('click',function(e){
  var el=e.target.closest('[data-r]'); if(!el) return;
  var a=el.dataset.r;
  if(a==='connect'){ connectWallet(el); return }
- if(a==='disconnect'){ disconnectWallet(); return }
+ if(a==='disconnect'){ openWalletMenu(el); return }
  if(a==='verify'){ R.verified=true; R.sig='0x'+rid(64); drawStep(); return }
  if(a==='getcode'){ R.code=rid(10); drawStep(); return }
  if(a==='checkx'){ R.xdone=true; drawStep(); return }
