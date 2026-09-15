@@ -3,9 +3,11 @@ import { cors } from "hono/cors";
 import { db } from "ponder:api";
 import { agentIdentity, agentStats, agentTokenBalance } from "ponder:schema";
 import { agents as agentConfigs } from "../lib/agents";
+import verifyApp from "./verify";
 
 const app = new Hono();
 app.use("/api/*", cors());
+app.route("/", verifyApp);
 
 /**
  * Shapes AQUITY-SPEC.md §4's Agent type from indexed on-chain data plus
