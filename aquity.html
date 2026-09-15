@@ -1144,7 +1144,8 @@ function agentFromIndexer(a){
   rate:a.rate||'', jobs:a.jobs, comp:a.completionRate, skills:a.skills,
   c:statusColor[a.status]||'#565C64', hist:a.history||[0,0,0,0,0,0,0],
   rsplit:a.feeSplit, vshare:a.vaultShare, px:a.tokenPrice, dwork:a.fromRevenue,
-  dfee:a.fromFees, cw:a.agentBalance, op:a.operator||'', acts:a.jobs||0};
+  dfee:a.fromFees, cw:a.agentBalance, op:a.operator||'', acts:a.jobs||0,
+  pool:a.poolAddress||null, tokenAddress:a.agentTokenAddress||null};
 }
 function showDemoNote(on){
  var n=document.getElementById('demoNote'); if(n) n.classList.toggle('on', !!on);
@@ -1277,6 +1278,7 @@ function syncWalletUI(){
   var reg=document.getElementById('p-register');
   if(reg && reg.classList.contains('on') && typeof drawStep==='function') drawStep();
  }
+ if(typeof OPEN!=='undefined' && OPEN && typeof refreshTrade==='function') refreshTrade(OPEN);
 }
 function attachProviderListeners(eth){
  if(!eth || !eth.on || LISTENED_PROVIDERS.indexOf(eth)!==-1) return;
@@ -1616,7 +1618,8 @@ draw();
 loadAgentsFromIndexer();
 
 /* ================= CHART + TRADE ================= */
-var POS={}, TR={side:'buy',amt:'',range:'1W',state:'idle'};
+var POS={}, TR={side:'buy',amt:'',range:'1W',state:'idle',err:'',txHash:''};
+var POOL_RATE=1000; // MockLaunchpadPool.TOKENS_PER_WEI — see contracts/src/mocks/MockLaunchpadFactory.sol
 var RANGES={'1H':{n:36,vol:.010,lbl:'past hour'},'1D':{n:48,vol:.028,lbl:'past 24 hours'},
             '1W':{n:56,vol:.055,lbl:'past 7 days'},'1M':{n:60,vol:.105,lbl:'past 30 days'}};
 function seed(str){var h=2166136261;for(var i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
@@ -1642,6 +1645,14 @@ function chartSVG(a){
   '<circle cx="'+W+'" cy="'+y(d[n-1]).toFixed(1)+'" r="3" fill="'+col+'"/></svg>';
 }
 function chartBlock(a){
+ // Real indexer agents have no price feed (tokenPrice is always 0 —
+ // AQUITY-SPEC §9 "Prices" isn't built) — the whole chart/ratio/market-cap
+ // header only means anything for demo-data agents that still carry a
+ // fake nonzero px. Show an honest placeholder instead of NaN everywhere.
+ if(!a.px){
+  return '<div class="dr-price"><span class="p" style="color:var(--mute);font-size:20px">No price feed</span></div>'+
+   '<div class="dr-usd">Real testnet agent — no price feed or trading chart exists here yet.</div>';
+ }
  var d=series(a,TR.range),chg=((d[d.length-1]/d[0])-1)*100;
  var ratio=a.px/a.sp;
  return '<div class="dr-price"><span class="p">'+ratio.toExponential(2).replace('e-','e−')+'</span>'+
@@ -1652,7 +1663,71 @@ function chartBlock(a){
   '<div class="ranges">'+Object.keys(RANGES).map(function(k){
     return '<button type="button" data-x="range" data-v="'+k+'" aria-pressed="'+(TR.range===k)+'">'+k+'</button>'}).join('')+'</div>';
 }
+function ethToWeiHex(ethStr){
+ var s=(ethStr||'').trim();
+ if(!s || isNaN(Number(s)) || Number(s)<=0) return null;
+ var parts=s.split('.');
+ var whole=parts[0]||'0';
+ var frac=(parts[1]||'').slice(0,18);
+ frac=frac+'0'.repeat(18-frac.length);
+ try{ return '0x'+(BigInt(whole)*1000000000000000000n+BigInt(frac||'0')).toString(16); }
+ catch(e){ return null; }
+}
+function posboxHTML(a){
+ if(!WALLET.address) return '<div class="hint">Connect your wallet to see your position.</div>';
+ return '<div class="l">Your position</div><div class="v" id="posboxVal">Loading…</div>';
+}
+function refreshRealPosition(a){
+ if(!WALLET.address || !a.tokenAddress || !WALLET.provider) return;
+ var iface=new ethers.Interface(['function balanceOf(address) view returns (uint256)']);
+ var data=iface.encodeFunctionData('balanceOf',[WALLET.address]);
+ WALLET.provider.request({method:'eth_call', params:[{to:a.tokenAddress, data:data},'latest']}).then(function(res){
+  var bal; try{ bal=BigInt(res); }catch(e){ return; }
+  var human=Number(bal)/1e18;
+  var el=document.getElementById('posboxVal');
+  if(el) el.textContent = human>0 ? fmt(human)+' '+a.t : 'None yet';
+ }).catch(function(){});
+}
+/* Real on-chain buy — wired to this agent's own dedicated MockLaunchpadPool
+   (Launcher.sol's per-agent-pool fix; see AgentFullyLaunched's `pool`
+   field). Only exists for agents with no price feed (a.px===0, i.e. real
+   indexer agents) AND a pool address (agents launched after that fix —
+   see AgentConfig.poolAddress's doc comment for why the original curated
+   cohort doesn't have one). Selling has no on-chain counterpart in this
+   mock launchpad at all, so it stays disabled with an honest message. */
+function realTradeBlock(a){
+ var buying=TR.side!=='sell';
+ var ethAmt=parseFloat(TR.amt)||0;
+ var tokensOut=ethAmt*POOL_RATE;
+ var connected=!!WALLET.address;
+ var busy=TR.state==='pending';
+ var label = busy?'Confirming…' : TR.state==='done'?'Bought' : !connected?'Connect wallet' : ('Buy $'+a.t);
+ var ok = busy ? false : (connected ? ethAmt>0 : true);
+ return '<div class="trade"><div class="trade-h">'+
+  '<button type="button" data-x="side" data-v="buy" aria-pressed="'+buying+'">Buy</button>'+
+  '<button type="button" class="sell" data-x="side" data-v="sell" aria-pressed="'+(!buying)+'">Sell</button></div>'+
+  '<div class="trade-b">'+
+  (buying
+   ? '<div class="amtwrap"><input type="number" inputmode="decimal" id="trAmt" data-x="amt" placeholder="0" step="0.0001" min="0" value="'+esc(TR.amt)+'">'+
+     '<span class="cur">ETH</span></div>'+
+     '<div class="quick">'+[0.0001,0.0005,0.001,0.005].map(function(v){return '<button type="button" data-x="q" data-v="'+v+'">'+v+'</button>'}).join('')+'</div>'+
+     '<div class="getrow"><span class="l">You receive</span><span class="v">'+(tokensOut?tokensOut.toFixed(4)+' '+a.t:'—')+'</span></div>'+
+     '<div class="tinyrow"><span>Rate</span><b>1 ETH = '+fmt(POOL_RATE)+' $'+a.t+'</b></div>'+
+     '<div class="hint" style="margin:8px 0 0">Real testnet transaction — fixed-rate mock launchpad, no market, no fee taken here.</div>'+
+     (TR.err?'<div class="err" style="margin-top:10px">'+esc(TR.err)+'</div>':'')+
+     '<button type="button" class="btn-buy" data-x="realsubmit"'+(ok?'':' disabled')+'>'+label+'</button>'
+   : '<div class="risk">Selling isn’t available yet — this testnet’s mock launchpad has no sell/redeem function, only a fixed-rate buy.</div>')+
+  '<div class="risk">Agent income is variable and often stops. $'+a.t+' is not stock and gives you no claim on '+a.co+'. '+
+   'Stock already sent to your wallet is yours to keep.</div>'+
+  '<div class="posbox">'+posboxHTML(a)+'</div>'+
+  '</div></div>';
+}
 function tradeBlock(a){
+ if(!a.px){
+  if(!a.pool) return '<div class="trade"><div class="trade-b">'+
+    '<div class="risk">Trading isn’t available for $'+a.t+' yet — it launched before this testnet’s per-agent trading pools existed.</div></div></div>';
+  return realTradeBlock(a);
+ }
  var amt=parseFloat(TR.amt)||0, fee=amt*0.01, net=amt-fee;
  var tokens=a.px?net/a.px:0;
  var held=POS[a.t]||0, heldUsd=held*a.px;
@@ -1697,7 +1772,7 @@ var scrim=document.getElementById('scrim'),drawer=document.getElementById('drawe
 var OPEN=null;
 function openA(t){
  var a=AG.filter(function(x){return x.t===t})[0];if(!a)return;
- OPEN=a; TR.side='buy'; TR.amt=''; TR.state='idle';
+ OPEN=a; TR.side='buy'; TR.amt=''; TR.state='idle'; TR.err=''; TR.txHash='';
  try{history.replaceState(null,'','#agent/'+a.t)}catch(e){}
  var n=a.skills.reduce(function(x,v){return x+v},0);
 
@@ -1742,6 +1817,7 @@ function openA(t){
 
  scrim.classList.add('on');drawer.classList.add('on');
  var x=document.getElementById('drx');x.addEventListener('click',closeA);x.focus();
+ if(!a.px && a.pool) refreshRealPosition(a);
 }
 function closeA(){scrim.classList.remove('on');drawer.classList.remove('on');OPEN=null;
  try{if(location.hash.indexOf('#agent/')===0)history.replaceState(null,'','#explore')}catch(e){}}
@@ -1752,9 +1828,33 @@ drawer.addEventListener('click',function(e){
  var el=e.target.closest('[data-x]'); if(!el||!OPEN) return;
  var x=el.dataset.x, a=OPEN;
  if(x==='range'){ TR.range=el.dataset.v; refreshTrade(a); return }
- if(x==='side'){ TR.side=el.dataset.v; TR.amt=''; TR.state='idle'; refreshTrade(a); return }
- if(x==='q'){ TR.amt=el.dataset.v; TR.state='idle'; refreshTrade(a); return }
+ if(x==='side'){ TR.side=el.dataset.v; TR.amt=''; TR.state='idle'; TR.err=''; refreshTrade(a); return }
+ if(x==='q'){ TR.amt=el.dataset.v; TR.state='idle'; TR.err=''; refreshTrade(a); return }
  if(x==='qp'){ TR.amt=(((POS[a.t]||0)*(+el.dataset.v)/100)).toFixed(0); TR.state='idle'; refreshTrade(a); return }
+ if(x==='realsubmit'){
+  if(!WALLET.address){ connectWallet(el); return; }
+  var weiHex=ethToWeiHex(TR.amt);
+  if(!weiHex){ TR.err='Enter a valid ETH amount.'; refreshTrade(a); return; }
+  if(!WALLET.provider){ TR.err='Wallet got disconnected — reconnect and try again.'; refreshTrade(a); return; }
+  TR.state='pending'; TR.err=''; refreshTrade(a);
+  ensureChain().then(function(){
+   var iface=new ethers.Interface(['function buy(address,uint256) payable returns (uint256)']);
+   var data=iface.encodeFunctionData('buy',[WALLET.address, 0]);
+   return WALLET.provider.request({method:'eth_sendTransaction', params:[{from:WALLET.address, to:a.pool, data:data, value:weiHex}]});
+  }).then(function(hash){
+   TR.txHash=hash;
+   return waitForReceipt(WALLET.provider, hash);
+  }).then(function(receipt){
+   if(receipt.status!=='0x1' && receipt.status!==1) throw new Error('Transaction reverted on-chain.');
+   TR.state='done'; TR.amt=''; refreshTrade(a);
+   refreshRealPosition(a);
+   setTimeout(function(){ TR.state='idle'; refreshTrade(a) },1400);
+  }).catch(function(err){
+   TR.state='idle';
+   TR.err=(err && (err.message||String(err))) || 'Buy failed.';
+   refreshTrade(a);
+  });
+  return }
  if(x==='submit'){
   var amt=parseFloat(TR.amt)||0; if(!amt) return;
   TR.state='pending'; refreshTrade(a);
@@ -1774,7 +1874,7 @@ drawer.addEventListener('click',function(e){
 });
 drawer.addEventListener('input',function(e){
  var el=e.target.closest('[data-x="amt"]'); if(!el||!OPEN) return;
- TR.amt=el.value; TR.state='idle'; refreshTrade(OPEN,true);
+ TR.amt=el.value; TR.state='idle'; TR.err=''; refreshTrade(OPEN,true);
 });
 
 /* ================= LIVE SIMULATION ================= */

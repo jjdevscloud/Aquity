@@ -22,6 +22,11 @@ export type AgentConfig = {
   feeRouterAddress: `0x${string}`;
   distributorAddress: `0x${string}`;
   vestingAddress: `0x${string}`;
+  /** This cohort predates MockLaunchpadFactory's per-agent pool fix (see
+   * its own doc comment) — the pool they'd trade through is the old
+   * shared, since-clobbered one, so there's no honest address to put here.
+   * Leave unset; the frontend disables real trading without one. */
+  poolAddress?: `0x${string}`;
   /** Block each of this agent's contracts was deployed at. */
   startBlock: number;
 };

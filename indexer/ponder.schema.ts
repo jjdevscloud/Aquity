@@ -117,5 +117,8 @@ export const autoAgent = onchainTable("auto_agent", (t) => ({
   feeRouterAddress: t.hex().notNull(),
   distributorAddress: t.hex().notNull(),
   vestingAddress: t.hex().notNull(),
+  /** The agent token's own dedicated MockLaunchpadPool — real buys go
+   * straight to this address (see aquity.html's trade widget). */
+  poolAddress: t.hex().notNull(),
   startBlock: t.bigint().notNull(),
 }));

@@ -69,6 +69,12 @@ app.get("/api/agents", async (c) => {
       company: config.company,
       sector: config.sector,
       operator: config.operator ?? null,
+      agentTokenAddress: config.agentTokenAddress,
+      // Real on-chain buys go straight to this agent's own dedicated
+      // MockLaunchpadPool — null means trading isn't available for it (the
+      // original curated cohort predates that pool-per-agent fix and has
+      // no honest address to offer here; see AgentConfig.poolAddress).
+      poolAddress: config.poolAddress ?? null,
 
       // Not indexed here — needs a price feed (Chainlink latestRoundData()
       // or a DEX quote, AQUITY-SPEC.md §9 "Prices"). 0 rather than a

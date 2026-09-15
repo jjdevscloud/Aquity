@@ -111,7 +111,9 @@ contract LauncherTest is Test {
 
         Vesting vesting = Vesting(vestingAddr);
         assertTrue(vesting.locked());
-        uint256 expectedTokens = 1 ether * factory.TOKENS_PER_WEI();
+        // TOKENS_PER_WEI is a fixed constant on every MockLaunchpadPool this
+        // factory deploys — no need to fetch the specific pool instance.
+        uint256 expectedTokens = 1 ether * 1000;
         assertEq(vesting.totalAllocation(), expectedTokens);
         assertEq(MockERC20(agentToken).balanceOf(vestingAddr), expectedTokens);
         assertEq(vesting.beneficiary(), builder);
@@ -176,7 +178,7 @@ contract LauncherTest is Test {
         p.minTokensOut = type(uint256).max;
 
         vm.prank(builder);
-        vm.expectRevert("MockLaunchpadFactory: insufficient output");
+        vm.expectRevert("MockLaunchpadPool: insufficient output");
         launcher.launch{value: 1 ether}(p);
     }
 }

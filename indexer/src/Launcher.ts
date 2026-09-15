@@ -49,6 +49,7 @@ ponder.on("Launcher:AgentFullyLaunched", async ({ event, context }) => {
       feeRouterAddress: event.args.feeRouter,
       distributorAddress: event.args.distributor,
       vestingAddress: event.args.vesting,
+      poolAddress: event.args.pool,
       startBlock: event.block.number,
     })
     .onConflictDoNothing();
