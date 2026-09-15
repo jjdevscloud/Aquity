@@ -31,6 +31,18 @@ const launcherV2Address = process.env.PONS_LAUNCHER_V2_ADDRESS as `0x${string}` 
 if (!launcherV2Address) throw new Error("Set PONS_LAUNCHER_V2_ADDRESS — see .env.example");
 const launcherV2StartBlock = Number(process.env.PONS_LAUNCHER_V2_START_BLOCK ?? 0);
 
+// PonsLauncherV0 — the very first launcher deployment, superseded by the
+// current PONS_LAUNCHER_ADDRESS at block 63548514 (confirmed via
+// AgentRegistry's own LauncherUpdated history) before PONS_LAUNCHER_ADDRESS
+// was ever recorded in this repo. MPROOF (tokenId 1) launched through this
+// one and only this one — its AgentLaunchedOnPons event doesn't exist on any
+// address this indexer already tracks, so without this it's permanently
+// unindexable, not just a start-block gap. Retired for good (no launches
+// after block 63548514), so tracking it costs nothing going forward.
+const launcherV0Address = process.env.PONS_LAUNCHER_V0_ADDRESS as `0x${string}` | undefined;
+if (!launcherV0Address) throw new Error("Set PONS_LAUNCHER_V0_ADDRESS — see .env.example");
+const launcherV0StartBlock = Number(process.env.PONS_LAUNCHER_V0_START_BLOCK ?? 0);
+
 const agentLaunchedEvent = PonsLauncherAbi.find(
   (item) => item.type === "event" && item.name === "AgentLaunchedOnPons",
 );
@@ -82,6 +94,18 @@ export default createConfig({
       abi: ERC20Abi,
       address: factory({ address: launcherV2Address, event: agentLaunchedEvent, parameter: "agentToken" }),
       startBlock: launcherV2StartBlock,
+    },
+    PonsLauncherV0: {
+      chain: "robinhoodMainnet",
+      abi: PonsLauncherAbi,
+      address: launcherV0Address,
+      startBlock: launcherV0StartBlock,
+    },
+    AgentTokenAutoV0: {
+      chain: "robinhoodMainnet",
+      abi: ERC20Abi,
+      address: factory({ address: launcherV0Address, event: agentLaunchedEvent, parameter: "agentToken" }),
+      startBlock: launcherV0StartBlock,
     },
   },
 });

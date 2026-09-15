@@ -29,3 +29,4 @@ async function handleTransfer({ event, context }: { event: any; context: any }) 
 // for why both must be tracked.
 ponder.on("AgentTokenAuto:Transfer", handleTransfer);
 ponder.on("AgentTokenAutoV2:Transfer", handleTransfer);
+ponder.on("AgentTokenAutoV0:Transfer", handleTransfer);
