@@ -163,9 +163,14 @@ contract Launcher is Ownable {
             c.agentToken, msg.sender, vestingAdmin, p.vestingReporter, address(this), p.vestingRevenueTarget
         );
         c.vesting = address(v);
-        ILaunchpadPool(c.pool).buy{value: msg.value}(c.vesting, p.minTokensOut);
-        v.lock();
 
+        // Emitted before buy()/lock() deliberately: an indexer discovering
+        // agentToken/vesting as factory children *from this very event*
+        // (Ponder's factory pattern, see /indexer/ponder.config.ts) can only
+        // see their activity from this log position onward. The first-buy
+        // mint and Vesting.Locked below are exactly the kind of same-
+        // transaction activity that would otherwise be silently invisible —
+        // discovered too late to be watched retroactively within one block.
         emit AgentFullyLaunched(
             tokenId,
             msg.sender,
@@ -181,6 +186,9 @@ contract Launcher is Ownable {
             c.pool,
             c.stockToken
         );
+
+        ILaunchpadPool(c.pool).buy{value: msg.value}(c.vesting, p.minTokensOut);
+        v.lock();
 
         agentToken = c.agentToken;
         vault = c.vault;
