@@ -41,6 +41,11 @@ interface IPonsFactory {
     function maxCreatorTaxBps() external view returns (uint256);
     function previewLaunchEconomics(uint256 launchConfigId, address pairToken) external view returns (bytes32);
     function launchForwarder() external view returns (address);
+    /// @notice The real, live PonsV2FeeEscrow — confirmed on mainnet at
+    /// 0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e via this exact getter
+    /// (selector 0xc4b7de97, "feeEscrow()"). Read live rather than
+    /// hardcoded so a Pons-side redeploy can't silently strand claims.
+    function feeEscrow() external view returns (address);
 
     /// @notice No dev buy. `msg.value` must equal `launchFee()` exactly.
     /// Returns the freshly deployed token and its bonding-curve pool —
