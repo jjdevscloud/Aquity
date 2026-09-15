@@ -1078,12 +1078,21 @@ document.addEventListener('DOMContentLoaded',function(){ if(location.hash) windo
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Agent detail"></aside>
 
-<script>window.AQUITY_API_BASE='https://aquity-production.up.railway.app';
-// New mainnet indexer (see /indexer-mainnet) — not deployed to Railway yet.
-// Fill this in once that service is live; the wizard's X-verify and
-// launch-detection steps degrade to a clear "not connected yet" message
-// while it's empty rather than failing silently.
-window.AQUITY_MAINNET_API_BASE='';</script>
+<script>
+// The Railway service at aquity-production.up.railway.app now runs
+// /indexer-mainnet (its root directory was repointed there, replacing the
+// old /indexer testnet deployment in place — there is no longer a separate
+// testnet indexer). Its /api/agents response shape (ticker/agentKey/
+// pairAddress/curveAddress) is NOT what agentFromIndexer() below expects
+// (stockPrice/revenue30d/holders/skills/feeSplit/...), so AQUITY_API_BASE
+// is deliberately left unset here rather than pointed at it — the homepage
+// board falls back to its built-in demo array (see loadAgentsFromIndexer())
+// instead of rendering broken/undefined fields from a shape it can't read.
+// Rebuilding the board against real mainnet data is separate follow-up
+// work, not done here.
+window.AQUITY_API_BASE='';
+window.AQUITY_MAINNET_API_BASE='https://aquity-production.up.railway.app';
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
 <script>
 /* Real deployed MAINNET contracts (chain 4663) that the registration wizard
