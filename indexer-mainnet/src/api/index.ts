@@ -40,6 +40,13 @@ app.get("/api/agents", async (c) => {
       agentTokenAddress: identity.agentTokenAddress,
       curveAddress: launch?.curve ?? null,
       registeredAt: Number(identity.registeredAt),
+      // Only set for enforced-mode agents (see PonsLauncherV2.sol's
+      // EnforcedRevenueRoutingDeployed) — null/absent means the agent's own
+      // wallet still receives creator fees directly (voluntary mode).
+      enforced: !!(launch && launch.vault),
+      vaultAddress: launch?.vault ?? null,
+      distributorAddress: launch?.distributor ?? null,
+      revenueRouterAddress: launch?.revenueRouter ?? null,
       // Confirmed working format (navigated there directly this session).
       // Not adding an Axiom deep link here — its search found our token
       // fine, but its exact token-page URL pattern was never actually

@@ -1311,13 +1311,21 @@ function liveCardOf(a){
  return '<div class="ac live">'+
   '<div class="ac-top"><div class="ac-g" style="background:var(--green)">'+esc(a.ticker[0])+'</div>'+
   '<div><div class="ac-t">$'+esc(a.ticker)+'</div><div class="ac-d">'+esc(a.name||a.ticker)+'</div></div>'+
-  '<div class="ac-pair">'+esc(pairLabel)+'</div></div>'+
+  '<div class="ac-pair">'+esc(pairLabel)+'</div>'+
+  (a.enforced?'<span class="lockchip" style="color:var(--green);border-color:var(--green);margin-left:6px">enforced</span>':'')+
+  '</div>'+
   '<div class="ac-grid livegrid">'+
    '<div><div class="l">Owner</div><div class="v"><a href="'+explorerAddr+esc(a.owner)+'" target="_blank" rel="noopener">'+esc(shortAddr(a.owner))+'</a></div></div>'+
    '<div><div class="l">Agent wallet</div><div class="v"><a href="'+explorerAddr+esc(a.agentKey)+'" target="_blank" rel="noopener">'+esc(shortAddr(a.agentKey))+'</a></div></div>'+
    '<div><div class="l">X</div><div class="v"><a href="https://x.com/'+esc(a.xHandle)+'" target="_blank" rel="noopener">@'+esc(a.xHandle)+'</a></div></div>'+
    '<div><div class="l">Registered</div><div class="v">'+fmtRegisteredAt(a.registeredAt)+'</div></div>'+
   '</div>'+
+  (a.enforced
+   ? '<div class="ac-grid livegrid" style="margin-top:8px">'+
+      '<div><div class="l">Vault</div><div class="v"><a href="'+explorerAddr+esc(a.vaultAddress)+'" target="_blank" rel="noopener">'+esc(shortAddr(a.vaultAddress))+'</a></div></div>'+
+      '<div><div class="l">Revenue router</div><div class="v"><a href="'+explorerAddr+esc(a.revenueRouterAddress)+'" target="_blank" rel="noopener">'+esc(shortAddr(a.revenueRouterAddress))+'</a></div></div>'+
+     '</div>'
+   : '')+
   (a.curveAddress
    ? '<a class="btn btn-p" style="margin-top:12px;display:block;text-align:center" href="'+esc((a.links&&a.links.gmgn)||('https://gmgn.ai/robinhood/token/'+a.agentTokenAddress))+'" target="_blank" rel="noopener">Trade on GMGN</a>'
    : '<p class="hint" style="margin-top:12px;margin-bottom:0">Registered — launch not yet indexed.</p>')+

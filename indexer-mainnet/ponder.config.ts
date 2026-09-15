@@ -2,6 +2,7 @@ import { createConfig, factory } from "ponder";
 
 import { AgentRegistryAbi } from "./abis/AgentRegistry";
 import { PonsLauncherAbi } from "./abis/PonsLauncher";
+import { PonsLauncherV2Abi } from "./abis/PonsLauncherV2";
 import { ERC20Abi } from "./abis/ERC20";
 
 const chainId = Number(process.env.ROBINHOOD_CHAIN_ID);
@@ -20,10 +21,9 @@ const launcherStartBlock = Number(process.env.PONS_LAUNCHER_START_BLOCK ?? 0);
 
 // PonsLauncherV2 (Phase B) — AgentRegistry.setLauncher() was repointed here
 // mid-session, so every launch since (real or test) is invisible to this
-// indexer unless it's tracked as its own contract too. AgentLaunchedOnPons's
-// signature is byte-identical between V1 and V2 (confirmed against both
-// source files), so reusing PonsLauncherAbi here is safe — V2's extra
-// LaunchParams fields don't appear in this event. Required, not optional:
+// indexer unless it's tracked as its own contract too. Uses PonsLauncherV2Abi
+// (not PonsLauncherAbi) so its real EnforcedRevenueRoutingDeployed event —
+// which V1 never had — is actually decodable. Required, not optional:
 // src/PonsLauncher.ts and src/AgentToken.ts bind handlers to this contract
 // name unconditionally, so a config without it would fail to start anyway —
 // better to fail loudly here with a clear message.
@@ -85,7 +85,7 @@ export default createConfig({
     },
     PonsLauncherV2: {
       chain: "robinhoodMainnet",
-      abi: PonsLauncherAbi,
+      abi: PonsLauncherV2Abi,
       address: launcherV2Address,
       startBlock: launcherV2StartBlock,
     },

@@ -34,6 +34,12 @@ export const ponsLaunch = onchainTable("pons_launch", (t) => ({
   agentToken: t.hex().notNull(),
   curve: t.hex().notNull(),
   startBlock: t.bigint().notNull(),
+  /** Set only for enforced-mode agents, from PonsLauncherV2's own
+   * EnforcedRevenueRoutingDeployed event (V1/V0 never emit it — those
+   * agents keep these null forever, meaning "voluntary"). */
+  vault: t.hex(),
+  distributor: t.hex(),
+  revenueRouter: t.hex(),
 }));
 
 /**
