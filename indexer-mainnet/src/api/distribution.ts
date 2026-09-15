@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { db } from "ponder:api";
 import { agentTokenTransfer, ponsLaunch } from "ponder:schema";
 import { eq } from "ponder";
-import { getProof, getLastEpoch } from "../lib/distributionDb";
+import { getProof, getLastEpoch, ensureDistributionSchema } from "../lib/distributionDb";
 
 /**
  * Phase B's distribution surface: one public read endpoint (what the
@@ -17,6 +17,17 @@ import { getProof, getLastEpoch } from "../lib/distributionDb";
  */
 const app = new Hono();
 
+// The job (src/jobs/postEpochRoot.ts) also calls this before its first real
+// write, but this API can be hit before any epoch has ever been posted —
+// without this, a plain "no epoch yet" 404/null response becomes a raw
+// "relation does not exist" 500 instead. Cached so it only runs once per
+// server lifetime, not per request.
+let schemaReady: Promise<void> | null = null;
+function ensureSchemaOnce(): Promise<void> {
+  if (!schemaReady) schemaReady = ensureDistributionSchema();
+  return schemaReady;
+}
+
 const INTERNAL_SECRET = process.env.INTERNAL_JOB_SECRET;
 
 function requireInternalSecret(c: any): Response | null {
@@ -27,6 +38,7 @@ function requireInternalSecret(c: any): Response | null {
 
 /** Public — what the frontend's claim widget fetches. */
 app.get("/api/distribution/:ticker/:epoch/proof/:holder", async (c) => {
+  await ensureSchemaOnce();
   const ticker = c.req.param("ticker").toUpperCase();
   const epochId = c.req.param("epoch");
   const holder = c.req.param("holder");
@@ -40,6 +52,7 @@ app.get("/api/distribution/:ticker/:epoch/proof/:holder", async (c) => {
 /** Public — lets the frontend's claim widget discover which epoch to ask
  * for a proof against, without needing to guess or increment ids itself. */
 app.get("/api/distribution/:ticker/latest", async (c) => {
+  await ensureSchemaOnce();
   const ticker = c.req.param("ticker").toUpperCase();
   const last = await getLastEpoch(ticker);
   if (!last) return c.json(null);

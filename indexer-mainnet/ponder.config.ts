@@ -18,6 +18,19 @@ if (!registryAddress) throw new Error("Set AGENT_REGISTRY_ADDRESS — see .env.e
 if (!launcherAddress) throw new Error("Set PONS_LAUNCHER_ADDRESS — see .env.example");
 const launcherStartBlock = Number(process.env.PONS_LAUNCHER_START_BLOCK ?? 0);
 
+// PonsLauncherV2 (Phase B) — AgentRegistry.setLauncher() was repointed here
+// mid-session, so every launch since (real or test) is invisible to this
+// indexer unless it's tracked as its own contract too. AgentLaunchedOnPons's
+// signature is byte-identical between V1 and V2 (confirmed against both
+// source files), so reusing PonsLauncherAbi here is safe — V2's extra
+// LaunchParams fields don't appear in this event. Required, not optional:
+// src/PonsLauncher.ts and src/AgentToken.ts bind handlers to this contract
+// name unconditionally, so a config without it would fail to start anyway —
+// better to fail loudly here with a clear message.
+const launcherV2Address = process.env.PONS_LAUNCHER_V2_ADDRESS as `0x${string}` | undefined;
+if (!launcherV2Address) throw new Error("Set PONS_LAUNCHER_V2_ADDRESS — see .env.example");
+const launcherV2StartBlock = Number(process.env.PONS_LAUNCHER_V2_START_BLOCK ?? 0);
+
 const agentLaunchedEvent = PonsLauncherAbi.find(
   (item) => item.type === "event" && item.name === "AgentLaunchedOnPons",
 );
@@ -57,6 +70,18 @@ export default createConfig({
       abi: ERC20Abi,
       address: factory({ address: launcherAddress, event: agentLaunchedEvent, parameter: "agentToken" }),
       startBlock: launcherStartBlock,
+    },
+    PonsLauncherV2: {
+      chain: "robinhoodMainnet",
+      abi: PonsLauncherAbi,
+      address: launcherV2Address,
+      startBlock: launcherV2StartBlock,
+    },
+    AgentTokenAutoV2: {
+      chain: "robinhoodMainnet",
+      abi: ERC20Abi,
+      address: factory({ address: launcherV2Address, event: agentLaunchedEvent, parameter: "agentToken" }),
+      startBlock: launcherV2StartBlock,
     },
   },
 });

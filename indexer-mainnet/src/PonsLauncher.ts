@@ -5,7 +5,7 @@ const ERC20_NAME_ABI = [
   { type: "function", name: "name", inputs: [], outputs: [{ name: "", type: "string" }], stateMutability: "view" },
 ] as const;
 
-ponder.on("PonsLauncher:AgentLaunchedOnPons", async ({ event, context }) => {
+async function handleAgentLaunched({ event, context }: { event: any; context: any }) {
   // `name` isn't in the event (kept out to save gas, same reasoning as
   // AgentRegistry.sol's xHandle) — the deployed token itself has a real
   // ERC-20 name(), so read it back rather than duplicating the string.
@@ -25,4 +25,11 @@ ponder.on("PonsLauncher:AgentLaunchedOnPons", async ({ event, context }) => {
       startBlock: event.block.number,
     })
     .onConflictDoNothing();
-});
+}
+
+// Same handler bound to both contracts — PonsLauncherV2 (Phase B) is a
+// separate tracked contract (see ponder.config.ts) with a byte-identical
+// AgentLaunchedOnPons event, since AgentRegistry.setLauncher() was
+// repointed there mid-session and every launch since goes through it.
+ponder.on("PonsLauncher:AgentLaunchedOnPons", handleAgentLaunched);
+ponder.on("PonsLauncherV2:AgentLaunchedOnPons", handleAgentLaunched);

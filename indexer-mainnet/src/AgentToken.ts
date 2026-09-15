@@ -12,7 +12,7 @@ import { agentTokenTransfer } from "ponder:schema";
  * this session's own fork/live testing: a ticker reverse-index wouldn't
  * exist yet for a token's very first transfer).
  */
-ponder.on("AgentTokenAuto:Transfer", async ({ event, context }) => {
+async function handleTransfer({ event, context }: { event: any; context: any }) {
   await context.db.insert(agentTokenTransfer).values({
     id: `${event.block.number}-${event.log.logIndex}`,
     agentToken: event.log.address,
@@ -22,4 +22,10 @@ ponder.on("AgentTokenAuto:Transfer", async ({ event, context }) => {
     blockNumber: event.block.number,
     timestamp: event.block.timestamp,
   });
-});
+}
+
+// AgentTokenAutoV2 (Phase B) mirrors AgentTokenAuto but discovers tokens via
+// PonsLauncherV2 — see ponder.config.ts's doc comment on launcherV2Address
+// for why both must be tracked.
+ponder.on("AgentTokenAuto:Transfer", handleTransfer);
+ponder.on("AgentTokenAutoV2:Transfer", handleTransfer);
