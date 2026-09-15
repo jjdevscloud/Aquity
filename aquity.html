@@ -185,6 +185,13 @@ select.sort{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(-
 .cnt{font-family:var(--mono);font-size:10.5px;color:var(--mute-2);margin-bottom:var(--gap)}
 .demoNote{display:none;align-items:center;gap:7px;font-family:var(--mono);font-size:10.5px;color:var(--heat);margin-bottom:var(--gap);padding:8px 11px;border:1px solid var(--line);border-radius:5px;background:var(--panel)}
 .demoNote.on{display:flex}
+.livewrap{margin-bottom:32px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+.livewrap .sh h3 em{color:var(--green)}
+.ac.live{cursor:default}
+.ac.live:hover{transform:none}
+.livegrid{grid-template-columns:1fr 1fr}
+.livegrid .v a{color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--line-2)}
+.livegrid .v a:hover{color:var(--green);border-color:var(--green)}
 
 .board{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--gap)}
 .ac{background:var(--pit);border:1px solid var(--line);border-left:2px solid var(--line-2);border-radius:8px;padding:15px 16px 13px;display:flex;flex-direction:column;width:100%;transition:.14s;cursor:pointer}
@@ -754,9 +761,14 @@ document.addEventListener('DOMContentLoaded',function(){ if(location.hash) windo
 <!-- ================= EXPLORE ================= -->
 <main class="panel on" id="p-explore">
   <div class="wrap">
+    <div class="livewrap" id="liveWrap" hidden>
+      <div class="sh"><span class="eyebrow">Real, on-chain</span><h3>Live agents <em>on mainnet</em></h3>
+      <p>Registered for real on Robinhood Chain and launched for real on Pons. Trading happens there, not here — these link straight out to it.</p></div>
+      <div class="board" id="liveBoard"></div>
+    </div>
     <div class="ph">
       <span class="eyebrow">The board</span><h2><em>Explore</em></h2>
-      <p>Ranked by stock actually sent to holders. Not price, not market cap.</p>
+      <p>Ranked by stock actually sent to holders. Not price, not market cap.<br><span style="color:var(--mute-2)">Example agents below — not real registrations.</span></p>
     </div>
     <div class="filters">
       <div class="seg alt" id="view">
@@ -1145,6 +1157,39 @@ var QC=['#00C805','#FFB000','#FF5A46'];
 var fmt=function(n){return n.toLocaleString('en-US',{maximumFractionDigits:0})};
 var money=function(n){return n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3).toFixed(1)+'k':'$'+Math.round(n)};
 
+/* Real Robinhood Chain mainnet Stock Tokens — pulled from
+   api.robinhood.com/rhj/assets (chain 4663 deployments only) and hardcoded
+   here because that endpoint doesn't send CORS headers, so the browser
+   can't fetch it directly. Addresses confirmed live; AAPL here is the same
+   address PonsLauncher.t.sol forks mainnet against. Shared by the "Live
+   agents" section below (resolves a real agent's pairAddress to a
+   readable name) and the register wizard's pairing step further down. */
+var STOCKS_MAINNET=[
+ {co:"Apple",tk:"AAPL",sc:"Consumer & hardware",addr:"0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"},
+ {co:"Microsoft",tk:"MSFT",sc:"Software engineering",addr:"0xe93237C50D904957Cf27E7B1133b510C669c2e74"},
+ {co:"Salesforce",tk:"CRM",sc:"Customer support",addr:"0xd95B44124e475743a7589e68F3D74008A5536D44"},
+ {co:"ServiceNow",tk:"NOW",sc:"Document & workflow",addr:"0x0C3260aF4B8f13a69c4c2dFb84fD667890CDFa14"},
+ {co:"Datadog",tk:"DDOG",sc:"Infrastructure ops",addr:"0x27c99fBde9D0d2AA4f4Bfb4943f237843DdF6958"},
+ {co:"Palantir",tk:"PLTR",sc:"Legal & risk",addr:"0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A"},
+ {co:"Adobe",tk:"ADBE",sc:"Content & creative",addr:"0x232B8ed6377BE97813853B0Ac104c4Cda8378d1B"},
+ {co:"Shopify",tk:"SHOP",sc:"Commerce ops",addr:"0xF53F66751B1Eff985311b693531E3290F600c410"},
+ {co:"Meta",tk:"META",sc:"Content & creative",addr:"0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35"},
+ {co:"Nvidia",tk:"NVDA",sc:"Infrastructure ops",addr:"0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC"},
+ {co:"IBM",tk:"IBM",sc:"Document & workflow",addr:"0x980dcf6766FA79f5Cf0c4AAdb3ab477ff15a9619"},
+ {co:"Reddit",tk:"RDDT",sc:"Sales & marketing",addr:"0x05b37Fb53A299a1b874A619e1c4C404D52C36F4C"},
+ {co:"Roblox",tk:"RBLX",sc:"Content & creative",addr:"0xF0C4BF4C582cb3836e98394b1d4e7B7281101bE8"},
+ {co:"Costco",tk:"COST",sc:"Commerce ops",addr:"0x4EA005168D7F09a7A0Ba9D1DEf21a479950E44C2"},
+ {co:"Intuit",tk:"INTU",sc:"Accounting & finance",addr:"0x56d23beE5f41A7120170b0c603Dae30128e460e9"},
+ {co:"Amazon",tk:"AMZN",sc:"Commerce ops",addr:"0x12f190a9F9d7D37a250758b26824B97CE941bF54"},
+ {co:"Alphabet",tk:"GOOGL",sc:"Infrastructure ops",addr:"0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3"},
+ {co:"Tesla",tk:"TSLA",sc:"Infrastructure ops",addr:"0x322F0929c4625eD5bAd873c95208D54E1c003b2d"}
+];
+function stockByAddr(addr){
+ if(!addr) return null;
+ var a=addr.toLowerCase();
+ return STOCKS_MAINNET.filter(function(x){return x.addr.toLowerCase()===a}).pop()||null;
+}
+
 /* ---------- live data: indexer feed ----------
    Set window.AQUITY_API_BASE (e.g. in a small inline <script> before this
    one, or by editing the default below) to a running indexer's origin —
@@ -1206,6 +1251,62 @@ function loadAgentsFromIndexer(){
  }).catch(function(err){
   console.warn('[aquity] indexer unreachable, showing demo data —', err.message);
   showDemoNote(true);
+ });
+}
+
+/* ---------- live data: real mainnet agents ----------
+   Separate from AG/loadAgentsFromIndexer() above on purpose — /indexer-
+   mainnet's /api/agents returns real identity + real Pons launch facts
+   (ticker/owner/agentKey/xHandle/pairAddress/agentTokenAddress/
+   curveAddress), not the demo board's simulated revenue/price/holders/
+   skills fields. Rendering real agents through the same cardOf()/tickSim()
+   machinery that fabricates those numbers would attach made-up activity to
+   a real wallet and a real on-chain identity — so this renders a smaller,
+   honest card instead: only fields the indexer actually reports, with
+   external links (GMGN, Blockscout) for anything that needs real price or
+   trading data, since that already lives on Pons itself. */
+var LIVE=[];
+function fmtRegisteredAt(unixSeconds){
+ try{ return new Date(unixSeconds*1000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+ catch(e){ return '—'; }
+}
+function liveCardOf(a){
+ var pair=stockByAddr(a.pairAddress);
+ var pairLabel=pair?('$'+pair.tk):(a.pairAddress?shortAddr(a.pairAddress):'—');
+ var explorerAddr='https://robinhoodchain.blockscout.com/address/';
+ return '<div class="ac live">'+
+  '<div class="ac-top"><div class="ac-g" style="background:var(--green)">'+esc(a.ticker[0])+'</div>'+
+  '<div><div class="ac-t">$'+esc(a.ticker)+'</div><div class="ac-d">'+esc(a.name||a.ticker)+'</div></div>'+
+  '<div class="ac-pair">'+esc(pairLabel)+'</div></div>'+
+  '<div class="ac-grid livegrid">'+
+   '<div><div class="l">Owner</div><div class="v"><a href="'+explorerAddr+esc(a.owner)+'" target="_blank" rel="noopener">'+esc(shortAddr(a.owner))+'</a></div></div>'+
+   '<div><div class="l">Agent wallet</div><div class="v"><a href="'+explorerAddr+esc(a.agentKey)+'" target="_blank" rel="noopener">'+esc(shortAddr(a.agentKey))+'</a></div></div>'+
+   '<div><div class="l">X</div><div class="v"><a href="https://x.com/'+esc(a.xHandle)+'" target="_blank" rel="noopener">@'+esc(a.xHandle)+'</a></div></div>'+
+   '<div><div class="l">Registered</div><div class="v">'+fmtRegisteredAt(a.registeredAt)+'</div></div>'+
+  '</div>'+
+  (a.curveAddress
+   ? '<a class="btn btn-p" style="margin-top:12px;display:block;text-align:center" href="'+esc((a.links&&a.links.gmgn)||('https://gmgn.ai/robinhood/token/'+a.agentTokenAddress))+'" target="_blank" rel="noopener">Trade on GMGN</a>'
+   : '<p class="hint" style="margin-top:12px;margin-bottom:0">Registered — launch not yet indexed.</p>')+
+  '</div>';
+}
+function drawLive(){
+ var wrap=document.getElementById('liveWrap'),board=document.getElementById('liveBoard');
+ if(!wrap||!board) return;
+ if(!LIVE.length){ wrap.hidden=true; return; }
+ wrap.hidden=false;
+ board.innerHTML=LIVE.map(liveCardOf).join('');
+}
+function loadLiveAgents(){
+ var base=window.AQUITY_MAINNET_API_BASE||'';
+ if(!base) return; // mainnet indexer not configured — section stays hidden
+ fetch(base+'/api/agents').then(function(r){
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+ }).then(function(list){
+  LIVE=Array.isArray(list)?list:[];
+  drawLive();
+ }).catch(function(err){
+  console.warn('[aquity] mainnet indexer unreachable —', err.message);
  });
 }
 
@@ -1642,6 +1743,7 @@ document.addEventListener('keydown',function(e){
 });
 draw();
 loadAgentsFromIndexer();
+loadLiveAgents();
 
 /* ================= CHART + TRADE ================= */
 var POS={}, TR={side:'buy',amt:'',range:'1W',state:'idle',err:'',txHash:''};
@@ -2036,32 +2138,10 @@ var SKILLDEF=[
  {k:"work",n:"Work more",d:"Buys itself capacity so it works ten jobs instead of one. Costs holders nothing today."}
 ];
 
-/* Real Robinhood Chain mainnet Stock Tokens — pulled from
-   api.robinhood.com/rhj/assets (chain 4663 deployments only) and hardcoded
-   here because that endpoint doesn't send CORS headers, so the browser
-   can't fetch it directly. Addresses confirmed live; AAPL here is the same
-   address PonsLauncher.t.sol forks mainnet against. */
 var AVC=["#00C805","#7FE06A","#E8F0EA","#FFB000","#8A7CFF","#FF5A46"];
-var STOCKS_MAINNET=[
- {co:"Apple",tk:"AAPL",sc:"Consumer & hardware",addr:"0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"},
- {co:"Microsoft",tk:"MSFT",sc:"Software engineering",addr:"0xe93237C50D904957Cf27E7B1133b510C669c2e74"},
- {co:"Salesforce",tk:"CRM",sc:"Customer support",addr:"0xd95B44124e475743a7589e68F3D74008A5536D44"},
- {co:"ServiceNow",tk:"NOW",sc:"Document & workflow",addr:"0x0C3260aF4B8f13a69c4c2dFb84fD667890CDFa14"},
- {co:"Datadog",tk:"DDOG",sc:"Infrastructure ops",addr:"0x27c99fBde9D0d2AA4f4Bfb4943f237843DdF6958"},
- {co:"Palantir",tk:"PLTR",sc:"Legal & risk",addr:"0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A"},
- {co:"Adobe",tk:"ADBE",sc:"Content & creative",addr:"0x232B8ed6377BE97813853B0Ac104c4Cda8378d1B"},
- {co:"Shopify",tk:"SHOP",sc:"Commerce ops",addr:"0xF53F66751B1Eff985311b693531E3290F600c410"},
- {co:"Meta",tk:"META",sc:"Content & creative",addr:"0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35"},
- {co:"Nvidia",tk:"NVDA",sc:"Infrastructure ops",addr:"0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC"},
- {co:"IBM",tk:"IBM",sc:"Document & workflow",addr:"0x980dcf6766FA79f5Cf0c4AAdb3ab477ff15a9619"},
- {co:"Reddit",tk:"RDDT",sc:"Sales & marketing",addr:"0x05b37Fb53A299a1b874A619e1c4C404D52C36F4C"},
- {co:"Roblox",tk:"RBLX",sc:"Content & creative",addr:"0xF0C4BF4C582cb3836e98394b1d4e7B7281101bE8"},
- {co:"Costco",tk:"COST",sc:"Commerce ops",addr:"0x4EA005168D7F09a7A0Ba9D1DEf21a479950E44C2"},
- {co:"Intuit",tk:"INTU",sc:"Accounting & finance",addr:"0x56d23beE5f41A7120170b0c603Dae30128e460e9"},
- {co:"Amazon",tk:"AMZN",sc:"Commerce ops",addr:"0x12f190a9F9d7D37a250758b26824B97CE941bF54"},
- {co:"Alphabet",tk:"GOOGL",sc:"Infrastructure ops",addr:"0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3"},
- {co:"Tesla",tk:"TSLA",sc:"Infrastructure ops",addr:"0x322F0929c4625eD5bAd873c95208D54E1c003b2d"}
-];
+// STOCKS_MAINNET now lives near the top of this script (with AG/QC/fmt) —
+// the "Live agents" board section needs it too, and needs it before this
+// point in the file executes. See its definition for why.
 
 var STEPS=["Connect wallet","Pick pairing & objectives","Download mandate","Paste agent details",
            "Verify on X","Name it","Fund your agent","Download launch package","Waiting for launch"];
