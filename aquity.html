@@ -1127,7 +1127,23 @@ window.AQUITY_CHAIN = {
  // Real Pons v2 factory (github.com/ponsmcp/pons-mcp) — read-only calls
  // only from this file (launchFee()), never written to directly.
  ponsFactoryAddress: '0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e',
- explorerTxUrl: 'https://robinhoodchain.blockscout.com/tx/'
+ // PonsLauncherV2 (Phase B) — deployed and mainnet-fork-tested this
+ // session (contracts/src/PonsLauncherV2.sol) but not yet actually
+ // deployed to real mainnet. Left blank on purpose: the wizard's enforced
+ // -routing toggle stays disabled with a clear reason, the same "not
+ // configured yet" pattern already used for AQUITY_MAINNET_API_BASE,
+ // rather than pointing real transactions at a contract that doesn't
+ // exist. Fill in once script/DeployPonsLauncherV2Mainnet.s.sol has run
+ // for real.
+ launcherV2Address: '',
+ // Real Uniswap V3 SwapRouter02 + wrapped-native token — independently
+ // confirmed on-chain this session (see RevenueRouter.sol). Only used by
+ // the wizard to build the enforced-routing launch package; never called
+ // directly from here.
+ swapRouterAddress: '0xCaf681a66D020601342297493863E78C959E5cb2',
+ wethAddress: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
+ explorerTxUrl: 'https://robinhoodchain.blockscout.com/tx/',
+ explorerAddressUrl: 'https://robinhoodchain.blockscout.com/address/'
 };
 </script>
 <script>
@@ -1165,7 +1181,12 @@ var money=function(n){return n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3
    agents" section below (resolves a real agent's pairAddress to a
    readable name) and the register wizard's pairing step further down. */
 var STOCKS_MAINNET=[
- {co:"Apple",tk:"AAPL",sc:"Consumer & hardware",addr:"0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"},
+ // poolFee: the real, confirmed-liquid Uniswap V3 fee tier for this
+ // stock's WETH pool (this session verified AAPL's 0.05% pool directly —
+ // ~221 AAPL / ~52 WETH). Only set where actually confirmed; enforced
+ // revenue routing (Phase B) is gated on this being present rather than
+ // guessing a tier that might have no real liquidity.
+ {co:"Apple",tk:"AAPL",sc:"Consumer & hardware",addr:"0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",poolFee:500},
  {co:"Microsoft",tk:"MSFT",sc:"Software engineering",addr:"0xe93237C50D904957Cf27E7B1133b510C669c2e74"},
  {co:"Salesforce",tk:"CRM",sc:"Customer support",addr:"0xd95B44124e475743a7589e68F3D74008A5536D44"},
  {co:"ServiceNow",tk:"NOW",sc:"Document & workflow",addr:"0x0C3260aF4B8f13a69c4c2dFb84fD667890CDFa14"},
@@ -1266,6 +1287,12 @@ function loadAgentsFromIndexer(){
    external links (GMGN, Blockscout) for anything that needs real price or
    trading data, since that already lives on Pons itself. */
 var LIVE=[];
+/* ticker -> {epochId, amount, proof, distributor, stockAddr, claiming, claimed, err} |
+   'none' (checked, nothing claimable) | undefined (not checked yet). Phase B
+   (M4): lets a connected holder claim their real Distributor payout
+   straight from the board, once an agent has enforced-mode routing and at
+   least one epoch has actually been posted (src/jobs/postEpochRoot.ts). */
+var CLAIMS={};
 function fmtRegisteredAt(unixSeconds){
  try{ return new Date(unixSeconds*1000).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
  catch(e){ return '—'; }
@@ -1274,6 +1301,7 @@ function liveCardOf(a){
  var pair=stockByAddr(a.pairAddress);
  var pairLabel=pair?('$'+pair.tk):(a.pairAddress?shortAddr(a.pairAddress):'—');
  var explorerAddr='https://robinhoodchain.blockscout.com/address/';
+ var claim=CLAIMS[a.ticker];
  return '<div class="ac live">'+
   '<div class="ac-top"><div class="ac-g" style="background:var(--green)">'+esc(a.ticker[0])+'</div>'+
   '<div><div class="ac-t">$'+esc(a.ticker)+'</div><div class="ac-d">'+esc(a.name||a.ticker)+'</div></div>'+
@@ -1287,7 +1315,17 @@ function liveCardOf(a){
   (a.curveAddress
    ? '<a class="btn btn-p" style="margin-top:12px;display:block;text-align:center" href="'+esc((a.links&&a.links.gmgn)||('https://gmgn.ai/robinhood/token/'+a.agentTokenAddress))+'" target="_blank" rel="noopener">Trade on GMGN</a>'
    : '<p class="hint" style="margin-top:12px;margin-bottom:0">Registered — launch not yet indexed.</p>')+
+  (claim && claim!=='none' ? claimWidgetHtml(a, claim) : '')+
   '</div>';
+}
+function claimWidgetHtml(a, claim){
+ var stockLabel=(stockByAddr(a.pairAddress)||{}).tk||'the paired stock';
+ if(claim.claimed) return '<div class="fixedbox" style="margin-top:12px"><div class="fixedrow"><span class="pc" style="color:var(--green)">&#10003;</span><span>Claimed</span></div></div>';
+ return '<div class="fixedbox" style="margin-top:12px"><div class="fixedrow"><span class="pc" style="color:var(--equity)">&bull;</span>'+
+  '<span>You can claim from epoch '+esc(claim.epochId)+'</span></div></div>'+
+  '<button type="button" class="btn btn-p" style="margin-top:8px;width:100%" data-r="claim" data-ticker="'+esc(a.ticker)+'"'+(claim.claiming?' disabled':'')+'>'+
+  (claim.claiming?'Claiming&hellip;':'Claim your '+stockLabel)+'</button>'+
+  (claim.err?'<div class="err" style="margin-top:8px">'+esc(claim.err)+'</div>':'');
 }
 function drawLive(){
  var wrap=document.getElementById('liveWrap'),board=document.getElementById('liveBoard');
@@ -1305,8 +1343,49 @@ function loadLiveAgents(){
  }).then(function(list){
   LIVE=Array.isArray(list)?list:[];
   drawLive();
+  loadClaimsForConnectedWallet();
  }).catch(function(err){
   console.warn('[aquity] mainnet indexer unreachable —', err.message);
+ });
+}
+/* Checks every real agent's latest posted epoch for a claimable proof
+   belonging to the connected wallet — call after wallet connect/switch and
+   after LIVE refreshes. Each agent is an independent fetch so one slow/
+   missing epoch never blocks the others. */
+function loadClaimsForConnectedWallet(){
+ var base=window.AQUITY_MAINNET_API_BASE||'';
+ if(!base || !WALLET.address || !LIVE.length) return;
+ LIVE.forEach(function(a){
+  fetch(base+'/api/distribution/'+a.ticker+'/latest').then(function(r){ return r.ok?r.json():null; })
+  .then(function(epoch){
+   if(!epoch){ CLAIMS[a.ticker]='none'; drawLive(); return; }
+   return fetch(base+'/api/distribution/'+a.ticker+'/'+epoch.epochId+'/proof/'+WALLET.address)
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(proof){
+     CLAIMS[a.ticker]=proof?{epochId:epoch.epochId, amount:proof.amount, proof:proof.proof, distributor:epoch.distributor, claiming:false, claimed:false, err:''}:'none';
+     drawLive();
+    });
+  }).catch(function(){ /* leave unset — no claim shown rather than a broken card */ });
+ });
+}
+function claimDistribution(ticker){
+ var claim=CLAIMS[ticker];
+ var eth=WALLET.provider;
+ if(!claim || claim==='none' || !eth || !WALLET.address) return;
+ claim.claiming=true; claim.err=''; drawLive();
+ ensureChain().then(function(){
+  var iface=new ethers.Interface(['function claim(uint256 epochId, address holder, uint256 amount, bytes32[] proof) external']);
+  var data=iface.encodeFunctionData('claim',[BigInt(claim.epochId), WALLET.address, BigInt(claim.amount), claim.proof]);
+  return eth.request({method:'eth_sendTransaction', params:[{from:WALLET.address, to:claim.distributor, data:data}]});
+ }).then(function(hash){
+  return waitForReceipt(eth, hash);
+ }).then(function(receipt){
+  if(receipt.status!=='0x1' && receipt.status!==1) throw new Error('Claim transaction reverted on-chain.');
+  claim.claiming=false; claim.claimed=true; drawLive();
+ }).catch(function(err){
+  claim.claiming=false;
+  claim.err=(err && (err.message||String(err))) || 'The claim transaction failed.';
+  drawLive();
  });
 }
 
@@ -1406,6 +1485,7 @@ function syncWalletUI(){
   if(reg && reg.classList.contains('on') && typeof drawStep==='function') drawStep();
  }
  if(typeof OPEN!=='undefined' && OPEN && typeof refreshTrade==='function') refreshTrade(OPEN);
+ CLAIMS={}; if(typeof loadClaimsForConnectedWallet==='function') loadClaimsForConnectedWallet();
 }
 function attachProviderListeners(eth){
  if(!eth || !eth.on || LISTENED_PROVIDERS.indexOf(eth)!==-1) return;
@@ -1597,6 +1677,9 @@ document.addEventListener('click', function(e){
 
  // close the drawer by clicking the scrim or the X
  if(e.target.id==='scrim' || e.target.closest('#drx')){ closeA(); return; }
+
+ // claim a real Distributor payout (Phase B) from a Live agents card
+ if((el=e.target.closest('[data-r="claim"]'))){ claimDistribution(el.dataset.ticker); return; }
 
  // any agent card or table row opens the drawer
  if((el=e.target.closest('[data-t]'))){ openA(el.dataset.t); return; }
@@ -2151,6 +2234,7 @@ function defaultR(){
  return {
   wallet:null, owner:null, agentId:"", q:"", stock:null,
   returnPct:60, buybackEnabled:true, creatorTaxBps:500, maxCreatorTaxBps:1000,
+  enforcedRouting:false,
   mandateDownloaded:false,
   agentKey:"", agentKeySig:"", pasteErr:"", agentKeyVerifiedLocally:false,
   handle:"", xNonce:"", tweetUrl:"", verifierSignature:"", xBusy:false, xdone:false, xErr:"",
@@ -2238,6 +2322,7 @@ function bodyFor(i){
   rr('Agent ID',esc(R.agentId),1)+
   rr('Paired with','$'+esc(R.stock.tk)+' &middot; '+esc(R.stock.co),1)+
   rr('Return to holders',R.returnPct+'%, retain '+(100-R.returnPct)+'%',1)+
+  rr('Fee routing',R.enforcedRouting?'enforced &mdash; on-chain Vault':'voluntary &mdash; agent\'s own wallet',1)+
   rr('Buy back shares',R.buybackEnabled?'on':'off',1)+
   '</div>'+
   '<button type="button" class="btn btn-p btn-lg" data-r="downloadmandate">Download mandate</button>'+
@@ -2337,6 +2422,7 @@ function bodyFor(i){
   rr('Name / ticker',esc(R.name)+' / $'+esc(R.ticker),5)+
   rr('Paired with','$'+esc(R.stock.tk)+' &middot; '+esc(R.stock.co),1)+
   rr('Creator fee',(R.creatorTaxBps/100)+'% &mdash; goes to the agent\'s own wallet',1)+
+  rr('Fee routing',R.enforcedRouting?'enforced, via a real Vault + Distributor':'voluntary, direct to the agent',1)+
   rr('Buyback',R.buybackEnabled?'enabled':'disabled',1)+
   rr('Pons launch fee (msg.value)',feeEth+' ETH',6)+
   '</div>'+
@@ -2361,12 +2447,25 @@ function stockListHtml(){
   }).join(''):'<div class="hint">Nothing matches that.</div>';
 }
 
+function enforcedRoutingAvailable(){
+ return !!(window.AQUITY_CHAIN.launcherV2Address && R.stock && R.stock.poolFee);
+}
 function objectivesHtml(){
  var tk=R.stock?('$'+R.stock.tk):'the paired stock';
+ var enforceable=enforcedRoutingAvailable();
+ var enforceReason=!window.AQUITY_CHAIN.launcherV2Address
+  ?'The on-chain enforcement contract (PonsLauncherV2) hasn\'t been deployed to mainnet yet.'
+  :(R.stock && !R.stock.poolFee)?('No confirmed liquid swap pool for $'+R.stock.tk+' yet &mdash; enforcement needs one to convert fees into the paired stock.'):'';
  return ''+
  '<div class="fgrp"><label for="rReturn">Return capital to holders &mdash; vs. retain earnings in the vault</label>'+
  '<div class="amtwrap"><input type="number" min="0" max="100" id="rReturn" data-r="returnpct" value="'+R.returnPct+'"><span class="cur">% returned as '+tk+'</span></div>'+
- '<div class="hint">The rest accumulates in the vault instead of being distributed. Both are weighted by balance &times; time held once Phase B\'s distributor is live &mdash; for now this is your agent\'s standing instruction.</div></div>'+
+ '<div class="hint">The rest accumulates in the vault instead of being distributed. Both are weighted by balance &times; time held.</div></div>'+
+ '<div class="skopt" data-r="enforcedrouting"'+(enforceable?'':' style="opacity:.5;cursor:default"')+'>'+
+ '<span class="sw'+(R.enforcedRouting&&enforceable?'':' off')+'"></span>'+
+ '<div><h4>Route creator fees through an on-chain Vault</h4>'+
+ '<p>Off by default: creator fees go straight to your agent\'s wallet, and honoring the split above is up to your agent. Turn this on and Pons routes fees through a real Vault + Distributor contract instead &mdash; holders can verify and claim their share directly, without trusting your agent to follow through.'+
+ (enforceReason?' <b style="color:var(--heat)">'+enforceReason+'</b>':'')+
+ '</p></div></div>'+
  '<div class="skopt" data-r="buyback"><span class="sw'+(R.buybackEnabled?'':' off')+'"></span>'+
  '<div><h4>Buy back shares</h4><p>When the token trades below the vault\'s value per token, the agent buys it and burns it. This is a real Pons v2 feature &mdash; set at launch, on-chain.</p></div></div>'+
  '<div class="skopt" style="opacity:.75"><span class="sw lock"></span><div><h4>Reward long-term holders</h4>'+
@@ -2565,8 +2664,14 @@ function waitForReceipt(eth, hash){
 }
 
 function buildLaunchPackage(){
+ var enforced=R.enforcedRouting && enforcedRoutingAvailable();
+ var target=enforced?window.AQUITY_CHAIN.launcherV2Address:window.AQUITY_CHAIN.launcherAddress;
+
+ var baseFields='address owner,string name,string ticker,string agentId,address agentKey,bytes agentKeySignature,string xHandle,uint256 xNonce,bytes verifierSignature,address pairStock,string logo,string description,string twitterHandle,uint16 creatorTaxBps,bool buybackEnabled';
  var iface=new ethers.Interface([
-  'function launch((address owner,string name,string ticker,string agentId,address agentKey,bytes agentKeySignature,string xHandle,uint256 xNonce,bytes verifierSignature,address pairStock,string logo,string description,string twitterHandle,uint16 creatorTaxBps,bool buybackEnabled) p) payable returns (uint256,address,address)'
+  enforced
+   ? 'function launch(('+baseFields+',bool enforcedRevenueRouting,uint256 holderFeeSplitBps,uint24 revenuePoolFee) p) payable returns (uint256,address,address)'
+   : 'function launch(('+baseFields+') p) payable returns (uint256,address,address)'
  ]);
  var params=[
   R.owner, R.name, R.ticker, R.agentId, R.agentKey, R.agentKeySig,
@@ -2574,9 +2679,10 @@ function buildLaunchPackage(){
   R.stock.addr, '', R.desc, R.handle,
   R.creatorTaxBps, R.buybackEnabled
  ];
+ if(enforced) params=params.concat([true, BigInt(R.returnPct*100), R.stock.poolFee]);
  var data=iface.encodeFunctionData('launch',[params]);
  var valueHex='0x'+R.launchFeeWei.toString(16);
- R.builtTx={to:window.AQUITY_CHAIN.launcherAddress, data:data, value:valueHex};
+ R.builtTx={to:target, data:data, value:valueHex};
  downloadJson('aquity-launch-'+R.ticker+'.json', {
   version:1,
   chain:{chainId:window.AQUITY_CHAIN.chainId, rpcUrl:window.AQUITY_CHAIN.rpcUrl},
@@ -2584,7 +2690,8 @@ function buildLaunchPackage(){
   humanReadableParams:{
    owner:R.owner, name:R.name, ticker:R.ticker, agentId:R.agentId, agentKey:R.agentKey,
    xHandle:R.handle, xNonce:R.xNonce, pairStock:R.stock.addr, description:R.desc,
-   creatorTaxBps:R.creatorTaxBps, buybackEnabled:R.buybackEnabled
+   creatorTaxBps:R.creatorTaxBps, buybackEnabled:R.buybackEnabled,
+   enforcedRevenueRouting:enforced, holderFeeSplitBps:enforced?R.returnPct*100:undefined, revenuePoolFee:enforced?R.stock.poolFee:undefined
   },
   factory:{address:window.AQUITY_CHAIN.ponsFactoryAddress, launchFeeFunction:'launchFee() view returns (uint256)'},
   instructions:"Send this exact transaction (to/data) from the same wallet that signed the mandate — msg.sender must equal agentKey or the transaction reverts. `value` must exactly equal the Pons factory's current launchFee() at send time — it was "+ethers.formatEther(R.launchFeeWei)+" ETH when this file was generated; re-read factory.launchFee() at the address above first in case it changed. If it has, the transaction simply reverts and refunds your ETH — safe to retry with the corrected value."
@@ -2614,8 +2721,9 @@ document.getElementById('p-register').addEventListener('click',function(e){
  var a=el.dataset.r;
  if(a==='connect'){ connectWallet(el); return }
  if(a==='disconnect'){ openWalletMenu(el); return }
- if(a==='stock'){ R.stock=STOCKS_MAINNET.filter(function(x){return x.tk===el.dataset.tk})[0]; drawStep(); return }
+ if(a==='stock'){ R.stock=STOCKS_MAINNET.filter(function(x){return x.tk===el.dataset.tk})[0]; if(!enforcedRoutingAvailable()) R.enforcedRouting=false; drawStep(); return }
  if(a==='buyback'){ R.buybackEnabled=!R.buybackEnabled; drawStep(); return }
+ if(a==='enforcedrouting'){ if(enforcedRoutingAvailable()) R.enforcedRouting=!R.enforcedRouting; drawStep(); return }
  if(a==='downloadmandate'){ downloadMandate(); return }
  if(a==='verifypaste'){ verifyPastedSignature(); return }
  if(a==='getcode'){ getVerificationCode(); return }

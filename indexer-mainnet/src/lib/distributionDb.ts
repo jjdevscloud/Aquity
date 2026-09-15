@@ -105,15 +105,15 @@ export async function insertProofs(proofs: ProofRecord[], client: pg.Pool = getP
   }
 }
 
-export async function getLastEpoch(ticker: string, client: pg.Pool = getPool()): Promise<{ epochId: bigint; epochEnd: bigint; totalAllocated: bigint } | null> {
+export async function getLastEpoch(ticker: string, client: pg.Pool = getPool()): Promise<{ epochId: bigint; epochEnd: bigint; totalAllocated: bigint; distributor: string } | null> {
   const res = await client.query(
-    `SELECT epoch_id, epoch_end, total_allocated FROM aquity_distribution_epoch
+    `SELECT epoch_id, epoch_end, total_allocated, distributor FROM aquity_distribution_epoch
      WHERE ticker = $1 ORDER BY epoch_id DESC LIMIT 1`,
     [ticker],
   );
   const row = res.rows[0];
   if (!row) return null;
-  return { epochId: BigInt(row.epoch_id), epochEnd: BigInt(row.epoch_end), totalAllocated: BigInt(row.total_allocated) };
+  return { epochId: BigInt(row.epoch_id), epochEnd: BigInt(row.epoch_end), totalAllocated: BigInt(row.total_allocated), distributor: row.distributor };
 }
 
 export async function sumPreviousAllocations(ticker: string, client: pg.Pool = getPool()): Promise<bigint> {

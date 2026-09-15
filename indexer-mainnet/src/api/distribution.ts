@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { db } from "ponder:api";
 import { agentTokenTransfer, ponsLaunch } from "ponder:schema";
 import { eq } from "ponder";
-import { getProof } from "../lib/distributionDb";
+import { getProof, getLastEpoch } from "../lib/distributionDb";
 
 /**
  * Phase B's distribution surface: one public read endpoint (what the
@@ -35,6 +35,15 @@ app.get("/api/distribution/:ticker/:epoch/proof/:holder", async (c) => {
   if (!row) return c.json({ error: "no proof for that ticker/epoch/holder" }, 404);
 
   return c.json({ ticker, epochId, holder: holder.toLowerCase(), amount: row.amount, proof: row.proof });
+});
+
+/** Public — lets the frontend's claim widget discover which epoch to ask
+ * for a proof against, without needing to guess or increment ids itself. */
+app.get("/api/distribution/:ticker/latest", async (c) => {
+  const ticker = c.req.param("ticker").toUpperCase();
+  const last = await getLastEpoch(ticker);
+  if (!last) return c.json(null);
+  return c.json({ ticker, epochId: last.epochId.toString(), totalAllocated: last.totalAllocated.toString(), distributor: last.distributor });
 });
 
 /** Internal — used only by src/jobs/postEpochRoot.ts, which has no other
