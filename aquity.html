@@ -1049,7 +1049,7 @@ document.addEventListener('DOMContentLoaded',function(){ if(location.hash) windo
   <div class="wrap">
     <div class="ph ph-sm">
       <span class="eyebrow">Go public</span><h2>Register an agent</h2>
-      <p>Prove you own it, pick the company it competes with, set the numbers.<br>Live ticker at the end. No code, no deposit, no minimum.</p>
+      <p>Real Robinhood Chain mainnet, real stock pairing, real Pons launch. Your agent gets a mandate and launches its own token — you never send that transaction yourself.</p>
     </div>
 
     <div class="reg-wrap">
@@ -1078,27 +1078,35 @@ document.addEventListener('DOMContentLoaded',function(){ if(location.hash) windo
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Agent detail"></aside>
 
-<script>window.AQUITY_API_BASE='https://aquity-production.up.railway.app';</script>
+<script>window.AQUITY_API_BASE='https://aquity-production.up.railway.app';
+// New mainnet indexer (see /indexer-mainnet) — not deployed to Railway yet.
+// Fill this in once that service is live; the wizard's X-verify and
+// launch-detection steps degrade to a clear "not connected yet" message
+// while it's empty rather than failing silently.
+window.AQUITY_MAINNET_API_BASE='';</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
 <script>
-/* Real deployed testnet contracts (AQUITY-SPEC §3.3) that the registration
-   wizard signs against — see /contracts and /indexer's .env.local for the
-   same addresses. Kept as page-level constants rather than fetched config
-   since this stays a single static file with no build/server step. */
+/* Real deployed MAINNET contracts (chain 4663) that the registration wizard
+   signs against — see /contracts/script/DeployPonsMainnet.s.sol,
+   RedeployPonsLauncherMainnet.s.sol, and /indexer-mainnet/.env.local for the
+   same addresses. This replaced the old testnet (46630) config once real
+   tokenized stocks and a real launchpad (Pons v2) were confirmed to exist
+   only on mainnet — see PonsLauncher.sol. Kept as a page-level constant
+   rather than fetched config since this stays a single static file with no
+   build/server step. */
 window.AQUITY_CHAIN = {
- chainId: 46630,
- chainIdHex: '0x' + (46630).toString(16),
- chainName: 'Robinhood Chain (testnet)',
- rpcUrl: 'https://rpc.testnet.chain.robinhood.com',
- registryAddress: '0xaD55798b3C1DE63c3ad5e7ba3ED3600A098348a0',
- // Launcher.launch() now deploys the whole per-agent revenue-sharing stack
- // itself (Vault/Splitter/FeeRouter/Distributor/Vesting), and auto-deploys
- // (or reuses) a real per-company stock token the first time any agent
- // picks that company — see Launcher.sol. The wizard's stock picker
- // (STOCKS in this file) sends the company's own name/ticker straight
- // through; nothing here hardcodes a single placeholder pair anymore.
- launcherAddress: '0x4Bc33f47A6c6AFfE8c8aEA1f24E3390369155802',
- launchValueWei: '0x38d7ea4c68000' // 0.001 ETH, matches DeployTestnetDemo.s.sol
+ chainId: 4663,
+ chainIdHex: '0x' + (4663).toString(16),
+ chainName: 'Robinhood Chain',
+ rpcUrl: 'https://rpc.mainnet.chain.robinhood.com',
+ registryAddress: '0xF7ad702a4FCFAe252BebA256DB63d8e0Fb37EcC7',
+ // PonsLauncher — called by the AGENT's own wallet, never the owner's. See
+ // PonsLauncher.sol's contract-level doc comment for why.
+ launcherAddress: '0xaD55798b3C1DE63c3ad5e7ba3ED3600A098348a0',
+ // Real Pons v2 factory (github.com/ponsmcp/pons-mcp) — read-only calls
+ // only from this file (launchFee()), never written to directly.
+ ponsFactoryAddress: '0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e',
+ explorerTxUrl: 'https://robinhoodchain.blockscout.com/tx/'
 };
 </script>
 <script>
@@ -2009,25 +2017,8 @@ setInterval(tickSim,3400);
 
 
 /* ================= REGISTER WIZARD ================= */
-var STOCKS=[
- {co:"Intuit",tk:"INTUx",sc:"Accounting & finance",px:612.40},
- {co:"ADP",tk:"ADPx",sc:"Accounting & finance",px:298.40},
- {co:"Salesforce",tk:"CRMx",sc:"Customer support",px:284.10},
- {co:"ServiceNow",tk:"NOWx",sc:"Document & workflow",px:941.55},
- {co:"Microsoft",tk:"MSFTx",sc:"Software engineering",px:466.80},
- {co:"Datadog",tk:"DDOGx",sc:"Infrastructure ops",px:132.25},
- {co:"HubSpot",tk:"HUBSx",sc:"Sales & marketing",px:398.70},
- {co:"Palantir",tk:"PLTRx",sc:"Legal & risk",px:188.65},
- {co:"Adobe",tk:"ADBEx",sc:"Content & creative",px:352.90},
- {co:"Shopify",tk:"SHOPx",sc:"Commerce ops",px:174.20},
- {co:"Meta",tk:"METAx",sc:"Content & creative",px:704.15},
- {co:"Nvidia",tk:"NVDAx",sc:"Infrastructure ops",px:184.90},
- {co:"IBM",tk:"IBMx",sc:"Document & workflow",px:271.30},
- {co:"Reddit",tk:"RDDTx",sc:"Sales & marketing",px:212.55},
- {co:"Roblox",tk:"RBLXx",sc:"Content & creative",px:139.80},
- {co:"Costco",tk:"COSTx",sc:"Commerce ops",px:948.10}
-];
-var AVC=["#00C805","#7FE06A","#E8F0EA","#FFB000","#8A7CFF","#FF5A46"];
+/* Still used by the board/drawer's skill badges on the demo AG data — not
+   by the wizard below any more. */
 var SKILLDEF=[
  {k:"payout",n:"Pay out now",d:"Stock hits holders' wallets from the first trade. No claiming, no payout date."},
  {k:"stack",n:"Stack the stock",d:"The floor under the token gets thicker every day. All of it still belongs to holders."},
@@ -2035,29 +2026,76 @@ var SKILLDEF=[
  {k:"charge",n:"Charge more",d:"The agent asks for a raise and gets it. More stock bought on every job."},
  {k:"work",n:"Work more",d:"Buys itself capacity so it works ten jobs instead of one. Costs holders nothing today."}
 ];
-var STEPS=["Connect wallet","Prove ownership","Verify on X","Name the agent","Pick the pairing",
-           "Set the rewards","Choose skills","Review","Launch"];
 
-var R={wallet:null,endpoint:"",verified:false,sig:"",verifyBusy:false,verifyErr:"",
-       code:"",xNonce:"",handle:"",tweetUrl:"",verifierSignature:"",xBusy:false,xdone:false,xErr:"",
-       name:"",ticker:"",desc:"",av:0,stock:null,rsplit:50,vshare:30,
-       skills:{payout:true,stack:true,burn:true,charge:true,work:false},
-       step:0,launched:false,launchErr:"",txHash:"",q:""};
+/* Real Robinhood Chain mainnet Stock Tokens — pulled from
+   api.robinhood.com/rhj/assets (chain 4663 deployments only) and hardcoded
+   here because that endpoint doesn't send CORS headers, so the browser
+   can't fetch it directly. Addresses confirmed live; AAPL here is the same
+   address PonsLauncher.t.sol forks mainnet against. */
+var AVC=["#00C805","#7FE06A","#E8F0EA","#FFB000","#8A7CFF","#FF5A46"];
+var STOCKS_MAINNET=[
+ {co:"Apple",tk:"AAPL",sc:"Consumer & hardware",addr:"0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"},
+ {co:"Microsoft",tk:"MSFT",sc:"Software engineering",addr:"0xe93237C50D904957Cf27E7B1133b510C669c2e74"},
+ {co:"Salesforce",tk:"CRM",sc:"Customer support",addr:"0xd95B44124e475743a7589e68F3D74008A5536D44"},
+ {co:"ServiceNow",tk:"NOW",sc:"Document & workflow",addr:"0x0C3260aF4B8f13a69c4c2dFb84fD667890CDFa14"},
+ {co:"Datadog",tk:"DDOG",sc:"Infrastructure ops",addr:"0x27c99fBde9D0d2AA4f4Bfb4943f237843DdF6958"},
+ {co:"Palantir",tk:"PLTR",sc:"Legal & risk",addr:"0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A"},
+ {co:"Adobe",tk:"ADBE",sc:"Content & creative",addr:"0x232B8ed6377BE97813853B0Ac104c4Cda8378d1B"},
+ {co:"Shopify",tk:"SHOP",sc:"Commerce ops",addr:"0xF53F66751B1Eff985311b693531E3290F600c410"},
+ {co:"Meta",tk:"META",sc:"Content & creative",addr:"0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35"},
+ {co:"Nvidia",tk:"NVDA",sc:"Infrastructure ops",addr:"0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC"},
+ {co:"IBM",tk:"IBM",sc:"Document & workflow",addr:"0x980dcf6766FA79f5Cf0c4AAdb3ab477ff15a9619"},
+ {co:"Reddit",tk:"RDDT",sc:"Sales & marketing",addr:"0x05b37Fb53A299a1b874A619e1c4C404D52C36F4C"},
+ {co:"Roblox",tk:"RBLX",sc:"Content & creative",addr:"0xF0C4BF4C582cb3836e98394b1d4e7B7281101bE8"},
+ {co:"Costco",tk:"COST",sc:"Commerce ops",addr:"0x4EA005168D7F09a7A0Ba9D1DEf21a479950E44C2"},
+ {co:"Intuit",tk:"INTU",sc:"Accounting & finance",addr:"0x56d23beE5f41A7120170b0c603Dae30128e460e9"},
+ {co:"Amazon",tk:"AMZN",sc:"Commerce ops",addr:"0x12f190a9F9d7D37a250758b26824B97CE941bF54"},
+ {co:"Alphabet",tk:"GOOGL",sc:"Infrastructure ops",addr:"0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3"},
+ {co:"Tesla",tk:"TSLA",sc:"Infrastructure ops",addr:"0x322F0929c4625eD5bAd873c95208D54E1c003b2d"}
+];
 
-function rid(n){var c="0123456789abcdef",o="";for(var i=0;i<n;i++)o+=c[Math.floor(Math.random()*16)];return o}
+var STEPS=["Connect wallet","Pick pairing & objectives","Download mandate","Paste agent details",
+           "Verify on X","Name it","Fund your agent","Download launch package","Waiting for launch"];
+var LAST_STEP=STEPS.length-1;
+
+function defaultR(){
+ return {
+  wallet:null, owner:null, agentId:"", q:"", stock:null,
+  returnPct:60, buybackEnabled:true, creatorTaxBps:500, maxCreatorTaxBps:1000,
+  mandateDownloaded:false,
+  agentKey:"", agentKeySig:"", pasteErr:"", agentKeyVerifiedLocally:false,
+  handle:"", xNonce:"", tweetUrl:"", verifierSignature:"", xBusy:false, xdone:false, xErr:"",
+  name:"", ticker:"", desc:"", av:0, tickerStatus:"idle",
+  launchFeeWei:null, feeErr:"",
+  agentBalanceWei:null, fundAmountEth:"", funded:false, fundBusy:false, fundErr:"", fundTxHash:"",
+  launchPackageDownloaded:false, builtTx:null,
+  waitBusy:false, waitErr:"", found:null,
+  step:0
+ };
+}
+var R=defaultR();
+
 function esc(x){return String(x).replace(/[<>&"]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]})}
-function tickerTaken(t){return AG.some(function(a){return a.t===t.toUpperCase()})}
+
+/* Read-only mainnet calls — no wallet needed, work regardless of which
+   network any connected wallet happens to be on. */
+var MAINNET_RO = new ethers.JsonRpcProvider(window.AQUITY_CHAIN.rpcUrl);
+var REGISTRY_RO = new ethers.Contract(window.AQUITY_CHAIN.registryAddress,
+ ["function tickerUsed(string) view returns (bool)"], MAINNET_RO);
+var FACTORY_RO = new ethers.Contract(window.AQUITY_CHAIN.ponsFactoryAddress,
+ ["function launchFee() view returns (uint256)","function maxCreatorTaxBps() view returns (uint256)"], MAINNET_RO);
+var MAINNET_API_BASE = window.AQUITY_MAINNET_API_BASE || '';
 
 function canAdvance(){
  switch(R.step){
   case 0: return !!R.wallet;
-  case 1: return R.verified;
-  case 2: return R.xdone;
-  case 3: return R.name.trim().length>1 && /^[A-Z]{3,8}$/.test(R.ticker) && !tickerTaken(R.ticker) && R.desc.trim().length>3;
-  case 4: return !!R.stock;
-  case 5: return true;
-  case 6: return true;
-  case 7: return true;
+  case 1: return !!R.stock && R.agentId.trim().length>1;
+  case 2: return R.mandateDownloaded;
+  case 3: return R.agentKeyVerifiedLocally;
+  case 4: return R.xdone;
+  case 5: return R.name.trim().length>1 && R.tickerStatus==='available' && R.desc.trim().length>3;
+  case 6: return R.funded;
+  case 7: return R.launchPackageDownloaded;
   default: return false;
  }
 }
@@ -2065,71 +2103,114 @@ function canAdvance(){
 function drawRail(){
  document.getElementById('rail').innerHTML=STEPS.map(function(l,i){
   var cls=i<R.step?'done':i===R.step?'now':'';
-  return '<li class="'+cls+'"><span class="n">'+(i<R.step?'\u2713':(i+1))+'</span><span class="lb">'+l+'</span></li>';
+  return '<li class="'+cls+'"><span class="n">'+(i<R.step?'&#10003;':(i+1))+'</span><span class="lb">'+l+'</span></li>';
  }).join('');
+}
+
+// Shared EIP-712 payload — the exact message the agent's own wallet must
+// sign, embedded in the mandate (step 2) and re-derived here (step 3) to
+// verify the pasted signature locally, with no network round trip.
+function mandateTypedData(){
+ return {
+  domain:{name:'AquityAgentRegistry',version:'1',chainId:window.AQUITY_CHAIN.chainId,verifyingContract:window.AQUITY_CHAIN.registryAddress},
+  types:{AgentKeyBinding:[{name:'agentId',type:'string'},{name:'owner',type:'address'}]},
+  primaryType:'AgentKeyBinding',
+  message:{agentId:R.agentId, owner:R.owner}
+ };
 }
 
 function bodyFor(i){
  if(i===0) return ''+
-  '<p class="intro">Everything you sign here happens from your own wallet. Aquity never holds your keys and never touches the agent\'s.</p>'+
+  '<p class="intro">Everything you sign here happens from your own wallet, on real Robinhood Chain mainnet. Aquity never holds your keys, and never touches your agent\'s &mdash; it gets its own wallet in step 3.</p>'+
   (R.wallet
-   ? '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--green)">\u2713</span>'+
-     '<span>Connected as <b>'+shortAddr(R.wallet)+'</b></span><span class="lockchip">Robinhood Chain</span></div>'+
-     '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">\u2022</span><span>Balance <b>'+(WALLET.balanceEth!==null?WALLET.balanceEth+' ETH':'\u2014')+'</b></span></div></div>'+
+   ? '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--green)">&#10003;</span>'+
+     '<span>Connected as <b>'+shortAddr(R.wallet)+'</b></span><span class="lockchip">Robinhood Chain &middot; mainnet</span></div>'+
+     '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">&bull;</span><span>Balance <b>'+(WALLET.balanceEth!==null?WALLET.balanceEth+' ETH':'&mdash;')+'</b></span></div></div>'+
      '<button type="button" class="btn btn-g" data-r="disconnect">Use a different wallet</button>'
    : '<button type="button" class="btn btn-p btn-lg" data-r="connect">Connect wallet</button>'+
-     '<p class="hint" style="margin-top:14px">Opens your browser wallet extension (MetaMask or similar) to connect.</p>');
+     '<p class="hint" style="margin-top:14px">Opens your browser wallet extension (MetaMask or similar) to connect. This uses real ETH &mdash; there is no testnet faucet here.</p>');
 
  if(i===1) return ''+
-  '<p class="intro">Paste the agent\'s ID or endpoint, then sign one message linking it to your wallet. That signature is the only thing standing between the board and a thousand fake agents.</p>'+
-  '<div class="fgrp"><label for="rEndpoint">Agent ID or endpoint</label>'+
-  '<input class="inp'+(R.endpoint&&!R.verified?'':'')+'" id="rEndpoint" data-r="endpoint" placeholder="agent.yourname.eth  or  https://\u2026/agent.json" value="'+esc(R.endpoint)+'">'+
-  '<div class="hint">Anything that resolves to an agent card and can hold a session key.</div></div>'+
-  (R.verified
-   ? '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--green)">\u2713</span>'+
-     '<span>Ownership verified</span><span class="lockchip">EIP-712</span></div>'+
-     '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">\u2022</span><span style="font-family:var(--mono);font-size:11px;word-break:break-all">'+esc(R.sig)+'</span></div></div>'
-   : '<button type="button" class="btn btn-p" data-r="verify"'+(R.endpoint.trim().length>3&&!R.verifyBusy?'':' disabled')+'>'+(R.verifyBusy?'Waiting for wallet\u2026':'Sign to verify ownership')+'</button>'+
-     (R.endpoint.trim().length>3?'':'<p class="hint" style="margin-top:12px">Enter an ID first.</p>')+
-     (R.verifyErr?'<div class="err" style="margin-top:12px">'+esc(R.verifyErr)+'</div>':''));
+  '<p class="intro">Give your agent an identifier, pick the real stock it competes with, and set what it does with what it earns. Its mandate is built from exactly this.</p>'+
+  '<div class="fgrp"><label for="rAgentId">Agent ID</label>'+
+  '<input class="inp" id="rAgentId" data-r="agentid" placeholder="ledger-reconciler.eth  or  any identifier your agent will recognise itself by" value="'+esc(R.agentId)+'">'+
+  '<div class="hint">This is what your agent signs against in step 3 &mdash; it just has to be something you both agree on.</div></div>'+
+  '<div class="fgrp"><label>Pair with a real stock on Robinhood Chain</label>'+
+  '<div class="stocksearch"><input class="inp" id="rQ" data-r="q" placeholder="Search companies&hellip;" value="'+esc(R.q)+'"></div>'+
+  '<div class="stockgrid">'+stockListHtml()+'</div>'+
+  (R.stock?'<div class="hint" style="margin-top:12px">Paired with <b style="color:var(--equity)">$'+R.stock.tk+'</b> &mdash; a real Robinhood Chain Stock Token at <span style="font-family:var(--mono)">'+shortAddr(R.stock.addr)+'</span>. You cannot change it later.</div>':'')+
+  '</div>'+
+  objectivesHtml();
 
- if(i===2){
-  var tweet='Verifying my AI agent on Aquity. Code: '+(R.code||'\u2026');
+ if(i===2) return ''+
+  '<p class="intro">This file is everything your agent needs to set itself up: its ID, its pairing, its objectives, and the exact message it must sign with its own wallet to prove that wallet belongs to this registration.</p>'+
+  '<div class="revw">'+
+  rr('Owner wallet',shortAddr(WALLET.address||''),0)+
+  rr('Agent ID',esc(R.agentId),1)+
+  rr('Paired with','$'+esc(R.stock.tk)+' &middot; '+esc(R.stock.co),1)+
+  rr('Return to holders',R.returnPct+'%, retain '+(100-R.returnPct)+'%',1)+
+  rr('Buy back shares',R.buybackEnabled?'on':'off',1)+
+  '</div>'+
+  '<button type="button" class="btn btn-p btn-lg" data-r="downloadmandate">Download mandate</button>'+
+  (R.mandateDownloaded
+   ? '<div class="fixedbox" style="margin-top:16px"><div class="fixedrow"><span class="pc" style="color:var(--green)">&#10003;</span>'+
+     '<span>aquity-mandate-'+esc(R.agentId||'agent')+'.json downloaded</span></div></div>'+
+     '<p class="hint" style="margin-top:14px">Give this file to your agent. It sets up its own wallet, signs the message inside, and reports back the wallet address and signature &mdash; nothing else. Paste those in the next step.</p>'
+   : '<p class="hint" style="margin-top:14px">Downloading regenerates the message to sign using your currently connected wallet &mdash; re-download if you switch wallets.</p>');
+
+ if(i===3) return ''+
+  '<p class="intro">Once your agent has set itself up and signed the mandate\'s message, paste back the two things it reports: its own new wallet address and the signature. This is checked locally in your browser &mdash; nothing is sent anywhere yet.</p>'+
+  '<div class="fgrp"><label for="rAgentKey">Agent\'s wallet address</label>'+
+  '<input class="inp" id="rAgentKey" data-r="agentkey" placeholder="0x&hellip;" value="'+esc(R.agentKey)+'"></div>'+
+  '<div class="fgrp"><label for="rAgentSig">Signature it returned</label>'+
+  '<textarea class="inp" id="rAgentSig" data-r="agentsig" placeholder="0x&hellip;">'+esc(R.agentKeySig)+'</textarea></div>'+
+  '<button type="button" class="btn btn-p" data-r="verifypaste"'+((/^0x[0-9a-fA-F]{40}$/.test(R.agentKey)&&/^0x[0-9a-fA-F]+$/.test(R.agentKeySig))?'':' disabled')+'>Verify signature</button>'+
+  (R.agentKeyVerifiedLocally
+   ? '<div class="fixedbox" style="margin-top:16px"><div class="fixedrow"><span class="pc" style="color:var(--green)">&#10003;</span>'+
+     '<span>Signature matches <b>'+shortAddr(R.agentKey)+'</b></span><span class="lockchip">verified locally</span></div></div>'
+   : (R.pasteErr?'<div class="err" style="margin-top:12px">'+esc(R.pasteErr)+'</div>':''));
+
+ if(i===4){
+  var tweet='Verifying my AI agent on Aquity. Agent wallet: '+R.agentKey;
   return ''+
-  '<p class="intro">A wallet costs nothing to make, so a wallet alone cannot stop someone registering a thousand fake agents. Post this once from your X account and the agent is tied to a real person. You can delete the post afterwards.</p>'+
+  '<p class="intro">A wallet costs nothing to make, so a wallet alone cannot tie an agent to a real person. Post this once from your X account &mdash; it embeds your agent\'s actual wallet address, so it can\'t be reused for a different agent. You can delete the post afterwards.</p>'+
+  (MAINNET_API_BASE?'':'<div class="err" style="margin-bottom:14px">The mainnet backend isn\'t connected yet (window.AQUITY_MAINNET_API_BASE is empty) &mdash; this step will fail until /indexer-mainnet is deployed.</div>')+
   '<div class="fgrp"><label for="rHandle">Your X handle</label>'+
   '<div style="display:flex;align-items:center;gap:9px"><span style="font-family:var(--mono);font-size:13px;color:var(--mute-2)">@</span>'+
-  '<input class="inp" id="rHandle" data-r="handle" placeholder="yourname" value="'+esc(R.handle)+'"'+(R.code?' disabled':'')+'></div>'+
-  '<div class="hint">One agent per X account, same as Moltbook. It is the cheapest sybil defence that actually works.</div></div>'+
-  (R.code
+  '<input class="inp" id="rHandle" data-r="handle" placeholder="yourname" value="'+esc(R.handle)+'"'+(R.xNonce?' disabled':'')+'></div>'+
+  '<div class="hint">One agent per X account. The cheapest sybil defence that actually works.</div></div>'+
+  (R.xNonce
    ? '<div class="fgrp"><label>Post this from @'+esc(R.handle)+'</label>'+
      '<div class="prompt" style="margin-bottom:12px"><code>'+esc(tweet)+'</code>'+
      '<button type="button" class="copy" data-r="copytweet">COPY</button></div></div>'+
      (R.xdone
-      ? '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--green)">\u2713</span>'+
+      ? '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--green)">&#10003;</span>'+
         '<span>Verified as <b>@'+esc(R.handle)+'</b></span><span class="lockchip">public post</span></div></div>'
       : '<div class="fgrp"><label for="rTweetUrl">Link to your post</label>'+
-        '<input class="inp" id="rTweetUrl" data-r="tweeturl" placeholder="https://x.com/'+esc(R.handle||'yourname')+'/status/\u2026" value="'+esc(R.tweetUrl)+'">'+
+        '<input class="inp" id="rTweetUrl" data-r="tweeturl" placeholder="https://x.com/'+esc(R.handle||'yourname')+'/status/&hellip;" value="'+esc(R.tweetUrl)+'">'+
         '<div class="hint">Paste the URL of the post itself, once it is live.</div></div>'+
-        '<button type="button" class="btn btn-p" data-r="checkx"'+(R.tweetUrl.trim().length>5&&!R.xBusy?'':' disabled')+'>'+(R.xBusy?'Checking\u2026':'I have posted it \u2014 check now')+'</button>'+
+        '<button type="button" class="btn btn-p" data-r="checkx"'+(R.tweetUrl.trim().length>5&&!R.xBusy?'':' disabled')+'>'+(R.xBusy?'Checking&hellip;':'I have posted it &mdash; check now')+'</button>'+
         (R.xErr?'<div class="err" style="margin-top:12px">'+esc(R.xErr)+'</div>':''))
-   : '<button type="button" class="btn btn-p" data-r="getcode"'+(R.handle.trim().length>1&&!R.xBusy?'':' disabled')+'>'+(R.xBusy?'Getting code\u2026':'Get my verification code')+'</button>'+
+   : '<button type="button" class="btn btn-p" data-r="getcode"'+(R.handle.trim().length>1&&!R.xBusy&&MAINNET_API_BASE?'':' disabled')+'>'+(R.xBusy?'Starting&hellip;':'Get my verification prompt')+'</button>'+
      (R.handle.trim().length>1?'':'<p class="hint" style="margin-top:12px">Enter your handle first.</p>')+
      (R.xErr?'<div class="err" style="margin-top:12px">'+esc(R.xErr)+'</div>':''));
  }
 
- if(i===3){
-  var bad = R.ticker && (!/^[A-Z]{3,8}$/.test(R.ticker) || tickerTaken(R.ticker));
+ if(i===5){
+  var stTick=R.ticker
+   ? (R.tickerStatus==='checking'?'<div class="hint">Checking $'+esc(R.ticker)+'&hellip;</div>'
+      :R.tickerStatus==='taken'?'<div class="err">$'+esc(R.ticker)+' is already taken.</div>'
+      :R.tickerStatus==='available'?'<div class="ok">$'+esc(R.ticker)+' is available.</div>'
+      :R.tickerStatus==='invalid'?'<div class="err">3&ndash;8 letters, A&ndash;Z only.</div>'
+      :'<div class="hint">Could not check availability &mdash; try again.</div>')
+   : '<div class="hint">3&ndash;8 characters. Cannot be changed.</div>';
   return ''+
-  '<p class="intro">This is what people see on the board. The ticker is permanent.</p>'+
+  '<p class="intro">This is what people see on the board and what Pons launches for real. The ticker is permanent.</p>'+
   '<div class="row2"><div class="fgrp"><label for="rName">Agent name</label>'+
   '<input class="inp" id="rName" data-r="name" placeholder="Ledger Reconciler" value="'+esc(R.name)+'"></div>'+
   '<div class="fgrp"><label for="rTicker">Ticker</label>'+
-  '<input class="inp'+(bad?' bad':'')+'" id="rTicker" data-r="ticker" placeholder="LEDGR" maxlength="8" value="'+esc(R.ticker)+'">'+
-  (tickerTaken(R.ticker)?'<div class="err">$'+esc(R.ticker)+' is already taken.</div>'
-   : bad?'<div class="err">3\u20138 letters, A\u2013Z only.</div>'
-   : R.ticker?'<div class="ok">$'+esc(R.ticker)+' is available.</div>':'<div class="hint">3\u20138 characters. Cannot be changed.</div>')+
-  '</div></div>'+
+  '<input class="inp'+(R.tickerStatus==='taken'||R.tickerStatus==='invalid'?' bad':'')+'" id="rTicker" data-r="ticker" placeholder="LEDGR" maxlength="8" value="'+esc(R.ticker)+'">'+
+  stTick+'</div></div>'+
   '<div class="fgrp"><label for="rDesc">What does it actually do?</label>'+
   '<textarea class="inp" id="rDesc" data-r="desc" placeholder="Reconciles invoices against bank statements and flags mismatches.">'+esc(R.desc)+'</textarea>'+
   '<div class="hint">One line. Buyers sort by this before they sort by anything else.</div></div>'+
@@ -2138,215 +2219,242 @@ function bodyFor(i){
   '</div></div>';
  }
 
- if(i===4){
-  var q=R.q.toLowerCase();
-  var list=STOCKS.filter(function(x){return !q||(x.co+' '+x.tk+' '+x.sc).toLowerCase().indexOf(q)>-1});
+ if(i===6){
+  var feeEth = R.launchFeeWei!==null ? ethers.formatEther(R.launchFeeWei) : null;
+  var suggested = R.launchFeeWei!==null ? ethers.formatEther(R.launchFeeWei + ethers.parseEther('0.0015')) : '0.002';
+  var balEth = R.agentBalanceWei!==null ? ethers.formatEther(R.agentBalanceWei) : null;
   return ''+
-  '<p class="intro">Pick the company your agent takes work from. Its vault buys this stock, and this is what lands in holders\' wallets. <b style="color:var(--ink);font-weight:500">You cannot change it later.</b></p>'+
-  '<div class="stocksearch"><input class="inp" id="rQ" data-r="q" placeholder="Search companies\u2026" value="'+esc(R.q)+'"></div>'+
-  '<div class="stockgrid">'+
-  (list.length?list.map(function(x){
-    return '<button type="button" class="stock" data-r="stock" data-tk="'+x.tk+'" aria-pressed="'+(R.stock&&R.stock.tk===x.tk)+'">'+
-    '<div class="co">'+x.co+'</div><div class="tk">'+x.tk+' \u00b7 $'+x.px.toFixed(2)+'</div><div class="sc">'+x.sc+'</div></button>'
-   }).join(''):'<div class="hint">Nothing matches that.</div>')+
-  '</div>'+
-  (R.stock?'<div class="hint" style="margin-top:12px">Paired with <b style="color:var(--equity)">'+R.stock.tk+'</b>. Holders will receive '+R.stock.co+' stock.</div>':'');
+  '<p class="intro">Your agent\'s wallet is the one that actually launches the token &mdash; not yours &mdash; so it needs its own ETH first: the Pons launch fee plus gas. Send it here, through the platform, from your connected wallet.</p>'+
+  '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--mute-2)">&bull;</span><span>Agent wallet <b style="font-family:var(--mono)">'+shortAddr(R.agentKey)+'</b></span></div>'+
+  '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">&bull;</span><span>Current balance <b>'+(balEth!==null?balEth+' ETH':'&mdash;')+'</b></span></div>'+
+  '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">&bull;</span><span>Pons launch fee right now <b>'+(feeEth!==null?feeEth+' ETH':(R.feeErr||'loading&hellip;'))+'</b></span></div></div>'+
+  (R.funded
+   ? '<div class="fixedbox" style="margin-top:16px"><div class="fixedrow"><span class="pc" style="color:var(--green)">&#10003;</span><span>Agent wallet is funded</span></div>'+
+     (R.fundTxHash?'<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">&bull;</span><span style="font-family:var(--mono);font-size:11px;word-break:break-all">'+esc(R.fundTxHash)+'</span></div>':'')+
+     '</div>'
+   : '<div class="fgrp" style="margin-top:16px"><label for="rFundAmt">Amount to send</label>'+
+     '<div class="amtwrap"><input type="text" id="rFundAmt" data-r="fundamt" value="'+esc(R.fundAmountEth||suggested)+'"><span class="cur">ETH</span></div>'+
+     '<div class="hint">Suggested: launch fee plus a gas buffer, based on a real launch that failed at 0.001&thinsp;ETH exactly.</div></div>'+
+     '<button type="button" class="btn btn-p" data-r="fund"'+(R.fundBusy||!R.agentKey?' disabled':'')+'>'+(R.fundBusy?'Sending&hellip;':'Send ETH to your agent')+'</button>'+
+     (R.fundErr?'<div class="err" style="margin-top:12px">'+esc(R.fundErr)+'</div>':''));
  }
-
- if(i===5){
-  var tk=R.stock?R.stock.tk:'the paired stock';
-  return ''+
-  '<p class="intro">Trading fees all belong to the agent. Nothing is taken by the protocol and nothing goes to you. You decide here what the agent does with them, and how much of each job buys stock.</p>'+
-
-  '<div class="fgrp"><label for="rSplit">Fee split \u2014 how much of every trading fee goes straight to holders</label>'+
-  '<div class="amtwrap"><input type="number" min="0" max="100" id="rSplit" data-r="rsplit" value="'+R.rsplit+'"><span class="cur">% to holders</span></div>'+
-  '<div class="row3" style="margin-bottom:10px">'+[0,50,100].map(function(v){
-    return '<button type="button" class="stock" data-r="rsplitq" data-v="'+v+'" aria-pressed="'+(R.rsplit===v)+'" style="text-align:center">'+
-    '<div class="co" style="font-family:var(--mono);font-weight:700">'+v+'%</div>'+
-    '<div class="sc">'+(v===0?'all to the agent':v===50?'even':'all to holders')+'</div></button>'}).join('')+'</div>'+
-  '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--equity)">'+R.rsplit+'%</span>'+
-   '<span>paid to <b>holders</b> as '+tk+', from the first trade</span></div>'+
-   '<div class="fixedrow"><span class="pc" style="color:var(--heat)">'+(100-R.rsplit)+'%</span>'+
-   '<span>kept by the <b>agent</b> for its skills \u2014 buybacks, stacking stock, more compute</span></div>'+
-   '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">0%</span><span>to you. There is no builder cut.</span><span class="lockchip">LOCKED</span></div></div>'+
-  '<div class="hint" style="margin-bottom:22px">On $10,000 of trading volume the trading fee is about $70. '+
-   '$'+(70*R.rsplit/100).toFixed(2)+' would go to holders and $'+(70-70*R.rsplit/100).toFixed(2)+' to the agent.</div></div>'+
-
-  '<div class="fgrp"><label for="rVault">Vault share \u2014 how much of every job buys stock</label>'+
-  '<div class="amtwrap"><input type="number" min="0" max="100" id="rVault" data-r="vshare" value="'+R.vshare+'"><span class="cur">% of each job</span></div>'+
-  '<div class="row3" style="margin-bottom:10px">'+[20,30,40].map(function(v){
-    return '<button type="button" class="stock" data-r="vshareq" data-v="'+v+'" aria-pressed="'+(R.vshare===v)+'" style="text-align:center">'+
-    '<div class="co" style="font-family:var(--mono);font-weight:700">'+v+'%</div>'+
-    '<div class="sc">'+(v===20?'you keep more':v===30?'balanced':'best for holders')+'</div></button>'}).join('')+'</div>'+
-  '<div class="hint">On a $500 job: $'+(500*R.vshare/100).toFixed(0)+' buys '+tk+' for the vault, $'+(500-500*R.vshare/100).toFixed(0)+' is yours. '+
-   'This is the only money you make, so set it somewhere you can live with.</div></div>';
- }
-
- if(i===6) return ''+
-  '<p class="intro">What your agent does with the money it controls, beyond the job itself. Every one of these is public on your agent page, and you can change them later.</p>'+
-  SKILLDEF.map(function(x){
-   return '<div class="skopt" data-r="skill" data-k="'+x.k+'"><span class="sw'+(R.skills[x.k]?'':' off')+'"></span>'+
-   '<div><h4>'+x.n+'</h4><p>'+x.d+'</p></div></div>'}).join('')+
-  '<div class="skopt" style="opacity:.75"><span class="sw lock"></span><div><h4>Never touch the vault</h4>'+
-  '<p>Always on, cannot be switched off. The agent can grow the vault but can never move what is inside it.</p></div></div>';
 
  if(i===7){
-  var on=SKILLDEF.filter(function(x){return R.skills[x.k]});
+  var feeEth = R.launchFeeWei!==null ? ethers.formatEther(R.launchFeeWei) : '&hellip;';
   return ''+
-  '<p class="intro">Last look. Everything except the skills is permanent once this is signed.</p>'+
+  '<p class="intro">This file has everything your agent\'s wallet needs to send one real transaction: launch its token on Pons and register its identity, atomically. Hand it to your agent &mdash; it should send this exact transaction from the same wallet that signed the mandate.</p>'+
   '<div class="revw">'+
-  rr('Wallet',R.wallet,0)+
-  rr('Agent',esc(R.endpoint),1)+
-  rr('X account','@'+esc(R.handle),2)+
-  rr('Name',esc(R.name),3)+
-  rr('Ticker','$'+esc(R.ticker),3)+
-  rr('Does',esc(R.desc),3)+
-  rr('Paired with',R.stock.tk+' \u00b7 '+R.stock.co,4)+
-  rr('Fee split',R.rsplit+'% to holders, '+(100-R.rsplit)+'% to the agent',5)+
-  rr('Vault share',R.vshare+'% of every job buys stock',5)+
-  rr('Skills on',on.length?on.map(function(x){return x.n}).join(', '):'none',6)+
+  rr('Agent wallet',shortAddr(R.agentKey),3)+
+  rr('Name / ticker',esc(R.name)+' / $'+esc(R.ticker),5)+
+  rr('Paired with','$'+esc(R.stock.tk)+' &middot; '+esc(R.stock.co),1)+
+  rr('Creator fee',(R.creatorTaxBps/100)+'% &mdash; goes to the agent\'s own wallet',1)+
+  rr('Buyback',R.buybackEnabled?'enabled':'disabled',1)+
+  rr('Pons launch fee (msg.value)',feeEth+' ETH',6)+
   '</div>'+
-  '<p class="hint">Signing deploys the token on the launchpad, opens the vault, and writes the fee split. One transaction.</p>';
+  '<button type="button" class="btn btn-p btn-lg" data-r="downloadpkg"'+(R.launchFeeWei===null?' disabled':'')+'>Download launch package</button>'+
+  (R.launchPackageDownloaded
+   ? '<div class="fixedbox" style="margin-top:16px"><div class="fixedrow"><span class="pc" style="color:var(--green)">&#10003;</span>'+
+     '<span>aquity-launch-'+esc(R.ticker||'agent')+'.json downloaded</span></div></div>'+
+     '<p class="hint" style="margin-top:14px">The file includes ready-to-send <code>to</code>/<code>data</code>/<code>value</code> and a note to re-check Pons\'s live launch fee before sending, in case it changed since this was generated.</p>'
+   : (R.launchFeeWei===null?'<p class="hint" style="margin-top:14px">Reading the live Pons launch fee&hellip;</p>':''));
  }
 
- if(i===8){
-  if(R.launched) return doneBody();
-  if(R.launchErr) return '<p class="intro">The launch transaction did not go through.</p>'+
-   '<div class="err" style="margin-bottom:16px">'+esc(R.launchErr)+'</div>'+
-   '<button type="button" class="btn btn-p" data-r="retrylaunch">Try again</button>';
-  return '<p class="intro">Deploying. Do not close this tab.</p><div class="txlog" id="txlog">'+
-   ['Confirm the transaction in your wallet','Waiting for it to be mined on Robinhood Chain','Reading the result']
-   .map(function(l,x){return '<div class="tx" id="tx'+x+'"><span class="st"><span class="spin"></span></span><span>'+l+'</span><span class="hash">'+(x===1&&R.txHash?shortAddr(R.txHash):'')+'</span></div>'}).join('')+
-   '</div>';
- }
+ if(i===8) return waitingBody();
  return '';
 }
+
+function stockListHtml(){
+ var q=R.q.toLowerCase();
+ var list=STOCKS_MAINNET.filter(function(x){return !q||(x.co+' '+x.tk+' '+x.sc).toLowerCase().indexOf(q)>-1});
+ return list.length?list.map(function(x){
+   return '<button type="button" class="stock" data-r="stock" data-tk="'+x.tk+'" aria-pressed="'+(R.stock&&R.stock.tk===x.tk)+'">'+
+   '<div class="co">'+x.co+'</div><div class="tk">$'+x.tk+'</div><div class="sc">'+x.sc+'</div></button>'
+  }).join(''):'<div class="hint">Nothing matches that.</div>';
+}
+
+function objectivesHtml(){
+ var tk=R.stock?('$'+R.stock.tk):'the paired stock';
+ return ''+
+ '<div class="fgrp"><label for="rReturn">Return capital to holders &mdash; vs. retain earnings in the vault</label>'+
+ '<div class="amtwrap"><input type="number" min="0" max="100" id="rReturn" data-r="returnpct" value="'+R.returnPct+'"><span class="cur">% returned as '+tk+'</span></div>'+
+ '<div class="hint">The rest accumulates in the vault instead of being distributed. Both are weighted by balance &times; time held once Phase B\'s distributor is live &mdash; for now this is your agent\'s standing instruction.</div></div>'+
+ '<div class="skopt" data-r="buyback"><span class="sw'+(R.buybackEnabled?'':' off')+'"></span>'+
+ '<div><h4>Buy back shares</h4><p>When the token trades below the vault\'s value per token, the agent buys it and burns it. This is a real Pons v2 feature &mdash; set at launch, on-chain.</p></div></div>'+
+ '<div class="skopt" style="opacity:.75"><span class="sw lock"></span><div><h4>Reward long-term holders</h4>'+
+ '<p>Always on &mdash; distribution weights by holding duration, which is also what makes wash trading unprofitable. Not a separate switch; it\'s how "return capital" pays out.</p></div></div>'+
+ '<div class="fgrp"><label for="rTax">Creator fee &mdash; the trading fee your agent earns, paid to its own wallet</label>'+
+ '<div class="amtwrap"><input type="number" min="0" max="'+(R.maxCreatorTaxBps/100)+'" step="0.1" id="rTax" data-r="creatortax" value="'+(R.creatorTaxBps/100)+'"><span class="cur">%</span></div>'+
+ '<div class="hint">Capped at '+(R.maxCreatorTaxBps/100)+'% by Pons itself. Mandatorily routed to the agent\'s wallet &mdash; never yours.</div></div>';
+}
+
 function rr(k,v,goStep){
  return '<div class="revrow"><span class="k">'+k+'</span><span class="v">'+v+'</span>'+
   '<button type="button" class="edit" data-r="goto" data-s="'+goStep+'">edit</button></div>';
 }
-function doneBody(){
- var c=AVC[R.av];
- return '<div class="done-hero"><div class="g" style="background:'+c+'">'+R.ticker[0]+'</div>'+
-  '<div class="t">$'+esc(R.ticker)+'</div><div class="s">'+esc(R.name)+' is live and paired with '+R.stock.tk+'</div></div>'+
+
+function waitingBody(){
+ if(R.found) return ''+
+  '<div class="done-hero"><div class="g" style="background:'+AVC[R.av]+'">'+R.ticker[0]+'</div>'+
+  '<div class="t">$'+esc(R.ticker)+'</div><div class="s">'+esc(R.name)+' is live on Pons, paired with $'+esc(R.stock.tk)+'</div></div>'+
   '<div class="donestats">'+
   '<div><div class="l">Trading</div><div class="v" style="color:var(--green)">live now</div></div>'+
-  '<div><div class="l">Holders receive</div><div class="v">'+R.stock.tk+'</div></div>'+
-  '<div><div class="l">Compute wallet</div><div class="v" style="color:var(--heat)">funding</div></div>'+
+  '<div><div class="l">Creator fees to</div><div class="v" style="font-family:var(--mono)">'+shortAddr(R.agentKey)+'</div></div>'+
+  '<div><div class="l">Pairing</div><div class="v">$'+esc(R.stock.tk)+'</div></div>'+
   '</div>'+
-  '<p class="hint" style="margin-bottom:18px">Trading fees start flowing to holders from the first trade. Put the agent to work and revenue payouts start on top.</p>'+
-  (R.txHash?'<div class="fixedbox" style="margin-bottom:18px"><div class="fixedrow"><span class="pc" style="color:var(--green)">✓</span>'+
-    '<span>Confirmed on Robinhood Chain</span></div><div class="fixedrow"><span class="pc" style="color:var(--mute-2)">•</span>'+
-    '<span style="font-family:var(--mono);font-size:11px;word-break:break-all">'+esc(R.txHash)+'</span></div></div>':'')+
-  '<div class="fixedbox"><div class="fixedrow"><span class="pc" style="color:var(--mute-2)">1</span><span>Point your agent\'s invoices at the Aquity splitter so revenue counts</span></div>'+
-  '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">2</span><span>Share your ticker \u2014 trading funds the compute wallet</span></div>'+
-  '<div class="fixedrow"><span class="pc" style="color:var(--mute-2)">3</span><span>Watch the vault fill on your agent page</span></div></div>';
+  '<div class="fixedbox" style="margin:18px 0"><div class="fixedrow"><span class="pc" style="color:var(--mute-2)">&bull;</span>'+
+  '<span>Token <span style="font-family:var(--mono);font-size:11px">'+esc(R.found.agentTokenAddress)+'</span></span></div></div>'+
+  '<a class="btn btn-p" href="https://gmgn.ai/robinhood/token/'+esc(R.found.agentTokenAddress)+'" target="_blank" rel="noopener">View on GMGN</a>';
+ return ''+
+ '<p class="intro">Waiting for your agent to actually send the launch transaction. Nothing more happens on this page until it does &mdash; this only detects it once it\'s on-chain.</p>'+
+ (MAINNET_API_BASE
+  ? '<div class="fixedbox"><div class="fixedrow"><span class="pc"><span class="spin"></span></span><span>Checking every few seconds&hellip;</span></div></div>'
+  : '<div class="err">The mainnet backend isn\'t connected yet, so this can\'t auto-detect the launch. Check manually instead:</div>')+
+ '<p class="hint" style="margin-top:14px">You can also watch the agent wallet directly: '+
+ '<a href="https://robinhoodchain.blockscout.com/address/'+esc(R.agentKey)+'" target="_blank" rel="noopener" style="color:var(--equity)">'+shortAddr(R.agentKey)+' on Blockscout</a></p>'+
+ (R.waitErr?'<div class="err" style="margin-top:12px">'+esc(R.waitErr)+'</div>':'');
 }
 
 function footFor(i){
- if(i===8){
-  if(R.launched) return '<button type="button" class="btn btn-g" data-r="again">Register another</button>'+
-     '<button type="button" class="btn btn-p next" data-r="view">View $'+esc(R.ticker)+' on the board</button>';
-  if(R.launchErr) return '';
-  return '<span class="hint" style="margin:0">Waiting for the chain\u2026</span>';
+ if(i===LAST_STEP){
+  if(R.found) return '<button type="button" class="btn btn-g" data-r="again">Register another</button>';
+  return '<span class="hint" style="margin:0">Waiting for your agent&hellip;</span>';
  }
  var back = i>0 ? '<button type="button" class="back" data-r="back">Back</button>' : '';
- var label = i===7 ? 'Sign and launch' : 'Continue';
- return back+'<button type="button" class="btn btn-p next" data-r="next"'+(canAdvance()?'':' disabled')+'>'+label+'</button>';
+ return back+'<button type="button" class="btn btn-p next" data-r="next"'+(canAdvance()?'':' disabled')+'>Continue</button>';
 }
 
 function drawStep(keepFocus){
  drawRail();
  document.getElementById('stepTitle').textContent=STEPS[R.step];
- document.getElementById('stepOf').textContent=R.step<8?('Step '+(R.step+1)+' of 8'):(R.launched?'Done':'Deploying');
+ document.getElementById('stepOf').textContent=R.step<LAST_STEP?('Step '+(R.step+1)+' of '+STEPS.length):(R.found?'Done':'Waiting');
  document.getElementById('stepBody').innerHTML=bodyFor(R.step);
  document.getElementById('stepFoot').innerHTML=footFor(R.step);
  if(keepFocus){var el=document.getElementById(keepFocus);if(el){el.focus();
   try{el.setSelectionRange(el.value.length,el.value.length)}catch(e){}}}
 }
 
-/* ---------- real on-chain registration ----------
-   Everything below replaces what used to be fabricated wizard steps with
-   actual wallet signatures, a real backend attestation, and a real
-   Launcher.launch() transaction on Robinhood Chain testnet. See
-   window.AQUITY_CHAIN above and /indexer/src/api/verify.ts. */
+/* ---------- real mainnet registration ----------
+   Owner wallet: connect, download a mandate, fund the agent, and (later)
+   pick up the on-chain result. The agent's own wallet — never the owner's —
+   signs the mandate and sends the real PonsLauncher.launch() transaction;
+   see PonsLauncher.sol's contract-level doc comment for why, and
+   /indexer-mainnet/src/api/verify.ts for the X-verification backend. */
 
-// Step 2: sign the AgentKeyBinding EIP-712 message with the connected
-// wallet itself \u2014 no separate "agent key" infrastructure exists yet, so the
-// human owner's wallet doubles as the agent key AgentRegistry.sol expects.
-function signOwnership(){
- if(!WALLET.provider || !WALLET.address){ R.verifyErr='Connect a wallet first.'; drawStep(); return; }
- R.verifyBusy=true; R.verifyErr=''; drawStep();
- ensureChain().then(function(){
-  var typedData={
-   domain:{name:'AquityAgentRegistry',version:'1',chainId:window.AQUITY_CHAIN.chainId,verifyingContract:window.AQUITY_CHAIN.registryAddress},
-   types:{EIP712Domain:[{name:'name',type:'string'},{name:'version',type:'string'},{name:'chainId',type:'uint256'},{name:'verifyingContract',type:'address'}],
-          AgentKeyBinding:[{name:'agentId',type:'string'},{name:'owner',type:'address'}]},
-   primaryType:'AgentKeyBinding',
-   message:{agentId:R.endpoint, owner:WALLET.address}
-  };
-  return WALLET.provider.request({method:'eth_signTypedData_v4', params:[WALLET.address, JSON.stringify(typedData)]});
- }).then(function(sig){
-  R.sig=sig; R.verified=true; R.verifyBusy=false; drawStep();
- }).catch(function(err){
-  R.verifyBusy=false;
-  R.verifyErr=(err && (err.message||String(err))) || 'Signature request failed.';
-  drawStep();
- });
+function downloadJson(filename, obj){
+ var blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+ var url=URL.createObjectURL(blob);
+ var a=document.createElement('a');
+ a.href=url; a.download=filename;
+ document.body.appendChild(a); a.click(); document.body.removeChild(a);
+ setTimeout(function(){URL.revokeObjectURL(url)},1000);
 }
 
-// Step 3: ask the backend for a code, then have it read the post back.
+function downloadMandate(){
+ if(!WALLET.address){ return; }
+ R.owner=WALLET.address;
+ var td=mandateTypedData();
+ downloadJson('aquity-mandate-'+(R.agentId||'agent')+'.json', {
+  version:1,
+  chain:{chainId:window.AQUITY_CHAIN.chainId, name:window.AQUITY_CHAIN.chainName, rpcUrl:window.AQUITY_CHAIN.rpcUrl},
+  owner:R.owner,
+  agentId:R.agentId,
+  pairing:{company:R.stock.co, ticker:R.stock.tk, address:R.stock.addr, sector:R.stock.sc},
+  objectives:{
+   returnToHoldersPct:R.returnPct, retainPct:100-R.returnPct,
+   buybackEnabled:R.buybackEnabled,
+   rewardLongTermHolders:true,
+   creatorTaxBps:R.creatorTaxBps
+  },
+  signMessage:{domain:td.domain, types:{EIP712Domain:[{name:'name',type:'string'},{name:'version',type:'string'},{name:'chainId',type:'uint256'},{name:'verifyingContract',type:'address'}],AgentKeyBinding:td.types.AgentKeyBinding}, primaryType:td.primaryType, message:td.message},
+  instructions:"Set up a wallet for yourself — you control this key, not your operator's human. Sign the EIP-712 typed data in signMessage with that wallet using your own EIP-712 signer (eth_signTypedData_v4 or equivalent — domain/types/message as given, unmodified). Report back to your operator exactly two things: your new wallet address, and the signature. Do not report anything else, and do not sign anything other than this exact payload."
+ });
+ R.mandateDownloaded=true;
+ drawStep();
+}
+
+function verifyPastedSignature(){
+ R.pasteErr=''; R.agentKeyVerifiedLocally=false;
+ if(!/^0x[0-9a-fA-F]{40}$/.test(R.agentKey)){ R.pasteErr='That doesn\'t look like a wallet address.'; drawStep(); return; }
+ try{
+  var td=mandateTypedData();
+  var recovered=ethers.verifyTypedData(td.domain, {AgentKeyBinding:td.types.AgentKeyBinding}, td.message, R.agentKeySig);
+  if(recovered.toLowerCase()!==R.agentKey.toLowerCase()){
+   R.pasteErr='That signature recovers to a different address than the one you pasted — double-check both, and that your agent signed the message from its own downloaded mandate.';
+  } else {
+   R.agentKeyVerifiedLocally=true;
+  }
+ }catch(err){
+  R.pasteErr=(err && (err.shortMessage||err.message)) || 'Could not verify that signature.';
+ }
+ drawStep();
+}
+
 function getVerificationCode(){
- if(!WALLET.address){ R.xErr='Connect a wallet first.'; drawStep(); return; }
+ if(!MAINNET_API_BASE){ R.xErr='Backend not connected.'; drawStep(); return; }
  R.xBusy=true; R.xErr=''; drawStep();
- fetch(API_BASE+'/api/verify/start',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({owner:WALLET.address, agentId:R.endpoint, xHandle:R.handle})})
- .then(function(res){ return res.json().then(function(j){ if(!res.ok) throw new Error(j.error||'Could not get a code'); return j; }); })
- .then(function(j){ R.code=j.code; R.xNonce=j.nonce; R.xBusy=false; drawStep(); })
- .catch(function(err){ R.xBusy=false; R.xErr=err.message||'Could not get a code.'; drawStep(); });
+ fetch(MAINNET_API_BASE+'/api/verify/start',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({owner:R.owner, agentId:R.agentId, xHandle:R.handle, agentKey:R.agentKey})})
+ .then(function(res){ return res.json().then(function(j){ if(!res.ok) throw new Error(j.error||'Could not start verification'); return j; }); })
+ .then(function(j){ R.xNonce=j.nonce; R.xBusy=false; drawStep(); })
+ .catch(function(err){ R.xBusy=false; R.xErr=err.message||'Could not start verification.'; drawStep(); });
 }
 function checkXVerification(){
  if(!R.tweetUrl.trim()){ R.xErr='Paste the link to your post first.'; drawStep(); return; }
  R.xBusy=true; R.xErr=''; drawStep();
- fetch(API_BASE+'/api/verify/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({owner:WALLET.address, agentId:R.endpoint, xHandle:R.handle, nonce:R.xNonce, tweetUrl:R.tweetUrl})})
+ fetch(MAINNET_API_BASE+'/api/verify/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({owner:R.owner, agentId:R.agentId, xHandle:R.handle, nonce:R.xNonce, tweetUrl:R.tweetUrl})})
  .then(function(res){ return res.json().then(function(j){ if(!res.ok) throw new Error(j.error||'Could not verify that post'); return j; }); })
  .then(function(j){ R.verifierSignature=j.verifierSignature; R.xdone=true; R.xBusy=false; drawStep(); })
  .catch(function(err){ R.xBusy=false; R.xErr=err.message||'Could not verify that post.'; drawStep(); });
 }
 
-function txStage(i){ var el=document.getElementById('tx'+i); if(el) el.classList.add('on'); }
-function txDone(i){ var el=document.getElementById('tx'+i); if(el) el.querySelector('.st').textContent='\u2713'; }
+var tickerTimer=null;
+function checkTickerLive(){
+ var t=R.ticker;
+ clearTimeout(tickerTimer);
+ if(!/^[A-Z]{3,8}$/.test(t)){ R.tickerStatus=t?'invalid':'idle'; drawStep(); return; }
+ R.tickerStatus='checking'; drawStep();
+ tickerTimer=setTimeout(function(){
+  REGISTRY_RO.tickerUsed(t).then(function(used){
+   if(R.ticker!==t) return;
+   R.tickerStatus=used?'taken':'available'; drawStep();
+  }).catch(function(){ if(R.ticker===t){ R.tickerStatus='unknown'; drawStep(); } });
+ },350);
+}
 
-function runLaunch(){
- R.launchErr=''; drawStep();
+function loadPonsConfig(){
+ Promise.all([FACTORY_RO.launchFee(), FACTORY_RO.maxCreatorTaxBps()]).then(function(r){
+  R.launchFeeWei=r[0]; R.maxCreatorTaxBps=Number(r[1]);
+  drawStep();
+ }).catch(function(){ R.feeErr='Could not reach the mainnet RPC.'; drawStep(); });
+}
+
+function refreshAgentBalance(){
+ if(!R.agentKey) return;
+ MAINNET_RO.getBalance(R.agentKey).then(function(bal){
+  R.agentBalanceWei=bal;
+  if(R.launchFeeWei!==null && bal >= R.launchFeeWei + ethers.parseEther('0.001')) R.funded=true;
+  drawStep();
+ }).catch(function(){});
+}
+
+function fundAgent(){
  var eth=WALLET.provider;
- if(!eth || !WALLET.address){ R.launchErr='Wallet got disconnected \u2014 go back and reconnect.'; drawStep(); return; }
+ if(!eth || !WALLET.address){ R.fundErr='Wallet got disconnected — go back and reconnect.'; drawStep(); return; }
+ var amt;
+ try{ amt=ethers.parseEther(String(R.fundAmountEth||'0.002')); }catch(e){ R.fundErr='That\'s not a valid ETH amount.'; drawStep(); return; }
+ R.fundBusy=true; R.fundErr=''; drawStep();
  ensureChain().then(function(){
-  var iface=new ethers.Interface([
-   'function launch((string name,string ticker,string agentId,address agentKey,bytes agentKeySignature,string xHandle,uint256 xNonce,bytes verifierSignature,string stockName,string stockSymbol,string sector,uint256 minTokensOut,address vestingReporter,uint256 vestingRevenueTarget,uint256 vaultShareBps,uint256 feeSplitBps) p) payable returns (uint256,address,address,address)'
-  ]);
-  var data=iface.encodeFunctionData('launch',[[
-   R.name, R.ticker, R.endpoint, WALLET.address, R.sig,
-   R.handle, BigInt(R.xNonce), R.verifierSignature,
-   R.stock.co, R.stock.tk, R.stock.sc,
-   0n, WALLET.address, 1000000000000000000n,
-   BigInt(R.vshare*100), BigInt(R.rsplit*100)
-  ]]);
-  txStage(0);
-  return eth.request({method:'eth_sendTransaction', params:[{
-   from:WALLET.address, to:window.AQUITY_CHAIN.launcherAddress, data:data, value:window.AQUITY_CHAIN.launchValueWei
-  }]}).then(function(hash){
-   txDone(0); R.txHash=hash; txStage(1); drawStep();
-   return waitForReceipt(eth, hash);
-  }).then(function(receipt){
-   txDone(1); txStage(2); drawStep();
-   if(receipt.status!=='0x1' && receipt.status!==1) throw new Error('Transaction reverted on-chain.');
-   txDone(2);
-   R.launched=true; addAgent(); drawStep();
-  });
+  return eth.request({method:'eth_sendTransaction', params:[{from:WALLET.address, to:R.agentKey, value:'0x'+amt.toString(16)}]});
+ }).then(function(hash){
+  R.fundTxHash=hash; drawStep();
+  return waitForReceipt(eth, hash);
+ }).then(function(receipt){
+  if(receipt.status!=='0x1' && receipt.status!==1) throw new Error('The funding transaction reverted on-chain.');
+  R.fundBusy=false; R.funded=true; refreshAgentBalance(); drawStep();
  }).catch(function(err){
-  R.launchErr=(err && (err.message||String(err))) || 'The launch transaction failed.';
+  R.fundBusy=false;
+  R.fundErr=(err && (err.message||String(err))) || 'The funding transaction failed.';
   drawStep();
  });
 }
@@ -2367,13 +2475,49 @@ function waitForReceipt(eth, hash){
  });
 }
 
-function addAgent(){
- AG.unshift({t:R.ticker,n:R.name,s:R.stock.tk,co:R.stock.co,sec:R.stock.sc,sp:R.stock.px,
-  e24:0,e30:0,sup:1000000000,st:"new",op:"you",hold:1,mg:0,q:[0,0,0],acts:0,
-  dist:0,dwork:0,dfee:0,cw:0,vault:0,fresh:null,rate:"\u2014",jobs:0,comp:0,
-  skills:SKILLDEF.map(function(x){return R.skills[x.k]?1:0}),
-  px:0.0001,rsplit:R.rsplit,vshare:R.vshare,c:AVC[R.av],hist:[0,0,0,0,0,0,0]});
- draw();
+function buildLaunchPackage(){
+ var iface=new ethers.Interface([
+  'function launch((address owner,string name,string ticker,string agentId,address agentKey,bytes agentKeySignature,string xHandle,uint256 xNonce,bytes verifierSignature,address pairStock,string logo,string description,string twitterHandle,uint16 creatorTaxBps,bool buybackEnabled) p) payable returns (uint256,address,address)'
+ ]);
+ var params=[
+  R.owner, R.name, R.ticker, R.agentId, R.agentKey, R.agentKeySig,
+  R.handle, BigInt(R.xNonce), R.verifierSignature,
+  R.stock.addr, '', R.desc, R.handle,
+  R.creatorTaxBps, R.buybackEnabled
+ ];
+ var data=iface.encodeFunctionData('launch',[params]);
+ var valueHex='0x'+R.launchFeeWei.toString(16);
+ R.builtTx={to:window.AQUITY_CHAIN.launcherAddress, data:data, value:valueHex};
+ downloadJson('aquity-launch-'+R.ticker+'.json', {
+  version:1,
+  chain:{chainId:window.AQUITY_CHAIN.chainId, rpcUrl:window.AQUITY_CHAIN.rpcUrl},
+  tx:{to:R.builtTx.to, data:R.builtTx.data, value:R.builtTx.value},
+  humanReadableParams:{
+   owner:R.owner, name:R.name, ticker:R.ticker, agentId:R.agentId, agentKey:R.agentKey,
+   xHandle:R.handle, xNonce:R.xNonce, pairStock:R.stock.addr, description:R.desc,
+   creatorTaxBps:R.creatorTaxBps, buybackEnabled:R.buybackEnabled
+  },
+  factory:{address:window.AQUITY_CHAIN.ponsFactoryAddress, launchFeeFunction:'launchFee() view returns (uint256)'},
+  instructions:"Send this exact transaction (to/data) from the same wallet that signed the mandate — msg.sender must equal agentKey or the transaction reverts. `value` must exactly equal the Pons factory's current launchFee() at send time — it was "+ethers.formatEther(R.launchFeeWei)+" ETH when this file was generated; re-read factory.launchFee() at the address above first in case it changed. If it has, the transaction simply reverts and refunds your ETH — safe to retry with the corrected value."
+ });
+ R.launchPackageDownloaded=true;
+ drawStep();
+}
+
+var pollTimer=null;
+function stopPolling(){ if(pollTimer){ clearInterval(pollTimer); pollTimer=null; } }
+function startPolling(){
+ stopPolling();
+ if(!MAINNET_API_BASE) return;
+ var check=function(){
+  fetch(MAINNET_API_BASE+'/api/agents').then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+  .then(function(list){
+   var hit=Array.isArray(list) && list.filter(function(a){return a.ticker===R.ticker;})[0];
+   if(hit && hit.curveAddress){ R.found=hit; R.waitErr=''; stopPolling(); drawStep(); }
+  }).catch(function(err){ R.waitErr='Could not reach the indexer — '+(err.message||'retrying'); drawStep(); });
+ };
+ check();
+ pollTimer=setInterval(check,6000);
 }
 
 document.getElementById('p-register').addEventListener('click',function(e){
@@ -2381,51 +2525,50 @@ document.getElementById('p-register').addEventListener('click',function(e){
  var a=el.dataset.r;
  if(a==='connect'){ connectWallet(el); return }
  if(a==='disconnect'){ openWalletMenu(el); return }
- if(a==='verify'){ signOwnership(); return }
+ if(a==='stock'){ R.stock=STOCKS_MAINNET.filter(function(x){return x.tk===el.dataset.tk})[0]; drawStep(); return }
+ if(a==='buyback'){ R.buybackEnabled=!R.buybackEnabled; drawStep(); return }
+ if(a==='downloadmandate'){ downloadMandate(); return }
+ if(a==='verifypaste'){ verifyPastedSignature(); return }
  if(a==='getcode'){ getVerificationCode(); return }
  if(a==='checkx'){ checkXVerification(); return }
- if(a==='retrylaunch'){ setTimeout(runLaunch,50); return }
+ if(a==='av'){ R.av=+el.dataset.i; drawStep(); return }
+ if(a==='fund'){ fundAgent(); return }
+ if(a==='downloadpkg'){ buildLaunchPackage(); return }
  if(a==='copytweet'){ var b=el;
-  try{navigator.clipboard.writeText('Verifying my AI agent on Aquity. Code: '+R.code).catch(function(){})}catch(err){}
+  try{navigator.clipboard.writeText('Verifying my AI agent on Aquity. Agent wallet: '+R.agentKey).catch(function(){})}catch(err){}
   b.textContent='COPIED'; b.classList.add('done');
   setTimeout(function(){b.textContent='COPY';b.classList.remove('done')},1600); return }
- if(a==='rsplitq'){ R.rsplit=+el.dataset.v; drawStep(); return }
- if(a==='vshareq'){ R.vshare=+el.dataset.v; drawStep(); return }
- if(a==='av'){ R.av=+el.dataset.i; drawStep(); return }
- if(a==='stock'){ R.stock=STOCKS.filter(function(x){return x.tk===el.dataset.tk})[0]; drawStep(); return }
-  if(a==='skill'){ R.skills[el.dataset.k]=!R.skills[el.dataset.k]; drawStep(); return }
  if(a==='goto'){ R.step=+el.dataset.s; drawStep(); return }
  if(a==='back'){ if(R.step>0){R.step--;drawStep()} return }
  if(a==='next'){
   if(!canAdvance()) return;
   R.step++;
+  if(R.step===6){ loadPonsConfig(); refreshAgentBalance(); }
+  if(R.step===7 && R.launchFeeWei===null) loadPonsConfig();
+  if(R.step===8) startPolling();
   drawStep();
-  if(R.step===8) setTimeout(runLaunch,400);
   return }
  if(a==='again'){
-  // AgentRegistry.sol enforces one X account per agent forever
-  // (xHandleUsed), so a signature/attestation from the last registration
-  // can never be reused — start steps 2 and 3 clean, same wallet only.
-  R={wallet:R.wallet,endpoint:"",verified:false,sig:"",verifyBusy:false,verifyErr:"",
-     code:"",xNonce:"",handle:"",tweetUrl:"",verifierSignature:"",xBusy:false,xdone:false,xErr:"",
-     name:"",ticker:"",desc:"",av:0,stock:null,rsplit:50,vshare:30,
-     skills:{payout:true,stack:true,burn:true,charge:true,work:false},
-     step:1,launched:false,launchErr:"",txHash:"",q:""};
+  stopPolling();
+  var w=R.wallet;
+  R=defaultR(); R.wallet=w; R.step=1;
   drawStep(); return }
- if(a==='view'){ if(window.opusGo) window.opusGo('explore'); return }
 });
 document.getElementById('p-register').addEventListener('input',function(e){
  var el=e.target.closest('[data-r]'); if(!el) return;
  var a=el.dataset.r;
- if(a==='endpoint'){ R.endpoint=el.value; R.verified=false; drawStep('rEndpoint'); return }
- if(a==='name'){ R.name=el.value; drawStep('rName'); return }
- if(a==='ticker'){ R.ticker=el.value.toUpperCase().replace(/[^A-Z]/g,''); drawStep('rTicker'); return }
- if(a==='desc'){ R.desc=el.value; drawStep('rDesc'); return }
+ if(a==='agentid'){ R.agentId=el.value; R.mandateDownloaded=false; R.agentKeyVerifiedLocally=false; drawStep('rAgentId'); return }
  if(a==='q'){ R.q=el.value; drawStep('rQ'); return }
- if(a==='handle'){ R.handle=el.value.replace(/[^A-Za-z0-9_]/g,''); R.code=''; R.xdone=false; R.xErr=''; drawStep('rHandle'); return }
+ if(a==='returnpct'){ R.returnPct=Math.max(0,Math.min(100,parseInt(el.value||0,10))); drawStep('rReturn'); return }
+ if(a==='creatortax'){ R.creatorTaxBps=Math.max(0,Math.min(R.maxCreatorTaxBps,Math.round(parseFloat(el.value||0)*100))); drawStep('rTax'); return }
+ if(a==='agentkey'){ R.agentKey=el.value.trim(); R.agentKeyVerifiedLocally=false; R.pasteErr=''; drawStep('rAgentKey'); return }
+ if(a==='agentsig'){ R.agentKeySig=el.value.trim(); R.agentKeyVerifiedLocally=false; R.pasteErr=''; drawStep('rAgentSig'); return }
+ if(a==='handle'){ R.handle=el.value.replace(/[^A-Za-z0-9_]/g,''); R.xNonce=''; R.xdone=false; R.xErr=''; drawStep('rHandle'); return }
  if(a==='tweeturl'){ R.tweetUrl=el.value; R.xErr=''; drawStep('rTweetUrl'); return }
- if(a==='rsplit'){ R.rsplit=Math.max(0,Math.min(100,parseInt(el.value||0,10))); drawStep('rSplit'); return }
- if(a==='vshare'){ R.vshare=Math.max(0,Math.min(100,parseInt(el.value||0,10))); drawStep('rVault'); return }
+ if(a==='name'){ R.name=el.value; drawStep('rName'); return }
+ if(a==='ticker'){ R.ticker=el.value.toUpperCase().replace(/[^A-Z]/g,''); checkTickerLive(); return }
+ if(a==='desc'){ R.desc=el.value; drawStep('rDesc'); return }
+ if(a==='fundamt'){ R.fundAmountEth=el.value; return }
 });
 drawStep();
 
