@@ -17,9 +17,31 @@ import { privateKeyToAccount } from "viem/accounts";
 
 const registryAddress = process.env.AGENT_REGISTRY_ADDRESS as `0x${string}` | undefined;
 const chainId = Number(process.env.ROBINHOOD_CHAIN_ID);
-const verifierKey = process.env.VERIFIER_PRIVATE_KEY as `0x${string}` | undefined;
 
-const verifierAccount = verifierKey ? privateKeyToAccount(verifierKey) : null;
+// Trim and unquote defensively — a copy-paste into an env var UI easily
+// picks up surrounding quotes or trailing whitespace, and viem's
+// privateKeyToAccount rejects anything that isn't exactly 0x + 64 hex chars.
+const rawVerifierKey = process.env.VERIFIER_PRIVATE_KEY?.trim().replace(/^['"]|['"]$/g, "");
+const verifierKey =
+  rawVerifierKey && /^0x[0-9a-fA-F]{64}$/.test(rawVerifierKey) ? (rawVerifierKey as `0x${string}`) : undefined;
+
+if (process.env.VERIFIER_PRIVATE_KEY && !verifierKey) {
+  console.error(
+    "[verify] VERIFIER_PRIVATE_KEY is set but isn't a valid 0x-prefixed 32-byte key — X verification will 503 until it's fixed",
+  );
+}
+
+// A bad key must only disable /api/verify/*, never take down the rest of
+// the API (this module used to crash Ponder's whole API build on a
+// malformed key, taking /api/agents down with it).
+let verifierAccount: ReturnType<typeof privateKeyToAccount> | null = null;
+if (verifierKey) {
+  try {
+    verifierAccount = privateKeyToAccount(verifierKey);
+  } catch (err) {
+    console.error("[verify] Failed to load VERIFIER_PRIVATE_KEY:", err);
+  }
+}
 
 const domain = {
   name: "AquityAgentRegistry",
