@@ -1127,15 +1127,21 @@ window.AQUITY_CHAIN = {
  // Real Pons v2 factory (github.com/ponsmcp/pons-mcp) — read-only calls
  // only from this file (launchFee()), never written to directly.
  ponsFactoryAddress: '0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e',
- // PonsLauncherV2 (Phase B) — deployed and mainnet-fork-tested this
- // session (contracts/src/PonsLauncherV2.sol) but not yet actually
- // deployed to real mainnet. Left blank on purpose: the wizard's enforced
- // -routing toggle stays disabled with a clear reason, the same "not
- // configured yet" pattern already used for AQUITY_MAINNET_API_BASE,
- // rather than pointing real transactions at a contract that doesn't
- // exist. Fill in once script/DeployPonsLauncherV2Mainnet.s.sol has run
- // for real.
- launcherV2Address: '',
+ // PonsLauncherV2 (Phase B) — deployed for real to mainnet via
+ // script/DeployPonsLauncherV2Mainnet.s.sol; registry.launcher() repointed
+ // and independently confirmed on-chain (eth_call cross-check, not just
+ // the deploy script's own log). AgentRegistry itself is unchanged and
+ // still owns identity for every agent, old launcher or new. Enforced
+ // routing's full real pipeline (launch -> real trade -> real creator-tax
+ // sweep -> real Pons fee-escrow claim -> real Uniswap V3 swap -> real
+ // Vault deposit) was proven end-to-end this session with two throwaway
+ // agents (AQVAULTB, AQVAULTC). AQVAULTB also surfaced a real production
+ // gap: Pons's sweepFees reverts InternalSwapRequiresOperator once a
+ // buyback balance exists, so enforced routing + buybackEnabled:true is
+ // currently incompatible — AQVAULTC (buybackEnabled:false) completed the
+ // full flow successfully. Until that gap is addressed, the wizard should
+ // not offer both enforcedRouting and buybackEnabled together.
+ launcherV2Address: '0xDeeBB9817e5943095Cc3f1bD63170F4a24823f9D',
  // Real Uniswap V3 SwapRouter02 + wrapped-native token — independently
  // confirmed on-chain this session (see RevenueRouter.sol). Only used by
  // the wizard to build the enforced-routing launch package; never called
@@ -2466,8 +2472,10 @@ function objectivesHtml(){
  '<p>Off by default: creator fees go straight to your agent\'s wallet, and honoring the split above is up to your agent. Turn this on and Pons routes fees through a real Vault + Distributor contract instead &mdash; holders can verify and claim their share directly, without trusting your agent to follow through.'+
  (enforceReason?' <b style="color:var(--heat)">'+enforceReason+'</b>':'')+
  '</p></div></div>'+
- '<div class="skopt" data-r="buyback"><span class="sw'+(R.buybackEnabled?'':' off')+'"></span>'+
- '<div><h4>Buy back shares</h4><p>When the token trades below the vault\'s value per token, the agent buys it and burns it. This is a real Pons v2 feature &mdash; set at launch, on-chain.</p></div></div>'+
+ '<div class="skopt" data-r="buyback"'+(R.enforcedRouting?' style="opacity:.5;cursor:default"':'')+'><span class="sw'+(R.buybackEnabled&&!R.enforcedRouting?'':' off')+'"></span>'+
+ '<div><h4>Buy back shares</h4><p>When the token trades below the vault\'s value per token, the agent buys it and burns it. This is a real Pons v2 feature &mdash; set at launch, on-chain.'+
+ (R.enforcedRouting?' <b style="color:var(--heat)">Not available with enforced fee routing &mdash; a confirmed real bug in Pons\'s own fee-sweep path reverts every claim once a buyback balance exists.</b>':'')+
+ '</p></div></div>'+
  '<div class="skopt" style="opacity:.75"><span class="sw lock"></span><div><h4>Reward long-term holders</h4>'+
  '<p>Always on &mdash; distribution weights by holding duration, which is also what makes wash trading unprofitable. Not a separate switch; it\'s how "return capital" pays out.</p></div></div>'+
  '<div class="fgrp"><label for="rTax">Creator fee &mdash; the trading fee your agent earns, paid to its own wallet</label>'+
@@ -2722,8 +2730,8 @@ document.getElementById('p-register').addEventListener('click',function(e){
  if(a==='connect'){ connectWallet(el); return }
  if(a==='disconnect'){ openWalletMenu(el); return }
  if(a==='stock'){ R.stock=STOCKS_MAINNET.filter(function(x){return x.tk===el.dataset.tk})[0]; if(!enforcedRoutingAvailable()) R.enforcedRouting=false; drawStep(); return }
- if(a==='buyback'){ R.buybackEnabled=!R.buybackEnabled; drawStep(); return }
- if(a==='enforcedrouting'){ if(enforcedRoutingAvailable()) R.enforcedRouting=!R.enforcedRouting; drawStep(); return }
+ if(a==='buyback'){ if(!R.enforcedRouting) R.buybackEnabled=!R.buybackEnabled; drawStep(); return }
+ if(a==='enforcedrouting'){ if(enforcedRoutingAvailable()){ R.enforcedRouting=!R.enforcedRouting; if(R.enforcedRouting) R.buybackEnabled=false; } drawStep(); return }
  if(a==='downloadmandate'){ downloadMandate(); return }
  if(a==='verifypaste'){ verifyPastedSignature(); return }
  if(a==='getcode'){ getVerificationCode(); return }
