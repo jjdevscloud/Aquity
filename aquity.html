@@ -1134,10 +1134,19 @@ var money=function(n){return n>=1e6?'$'+(n/1e6).toFixed(2)+'M':n>=1e3?'$'+(n/1e3
    see /indexer — to replace the demo board with real on-chain data. Left
    unset, the page behaves exactly like the static prototype. */
 var API_BASE = window.AQUITY_API_BASE || '';
+// The launchpad factory before its per-agent-pool fix (see
+// MockLaunchpadFactory.sol) reused itself as one shared pool with a single
+// mutable "current token" — any agent launched before that fix has this
+// exact address recorded as its `pool`, which today mints whatever token
+// that shared state last pointed to, not that agent's own. Treat it the
+// same as having no pool at all rather than letting Buy mint the wrong
+// token into someone's wallet.
+var BROKEN_SHARED_POOL='0x507857eee3ac0aed7896eabeba5ecda189c576c6';
 function agentFromIndexer(a){
  /* Translates the indexer's /api/agents response — AQUITY-SPEC §4's Agent
     type, field for field — into this prototype's short internal keys. */
  var statusColor = {busy:'#00C805', new:'#8A7CFF', stalled:'#565C64'};
+ var pool = (a.poolAddress && a.poolAddress.toLowerCase()!==BROKEN_SHARED_POOL) ? a.poolAddress : null;
  return {t:a.ticker, n:a.name, s:a.pair, co:a.company, sec:a.sector, sp:a.stockPrice,
   e24:a.revenue24h, e30:a.revenue30d, sup:a.supply, st:a.status, hold:a.holders,
   mg:a.margin, q:a.quality, dist:a.distributed, vault:a.vault, fresh:a.daysSincePaid,
@@ -1145,7 +1154,7 @@ function agentFromIndexer(a){
   c:statusColor[a.status]||'#565C64', hist:a.history||[0,0,0,0,0,0,0],
   rsplit:a.feeSplit, vshare:a.vaultShare, px:a.tokenPrice, dwork:a.fromRevenue,
   dfee:a.fromFees, cw:a.agentBalance, op:a.operator||'', acts:a.jobs||0,
-  pool:a.poolAddress||null, tokenAddress:a.agentTokenAddress||null};
+  pool:pool, tokenAddress:a.agentTokenAddress||null};
 }
 function showDemoNote(on){
  var n=document.getElementById('demoNote'); if(n) n.classList.toggle('on', !!on);
