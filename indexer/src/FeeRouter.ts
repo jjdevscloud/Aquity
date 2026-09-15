@@ -1,14 +1,14 @@
 import { ponder } from "ponder:registry";
 import { agentStats } from "ponder:schema";
-import { agentForAddress } from "./lib/agents";
+import { FeeRouterAbi } from "../abis/FeeRouter";
+import { resolveTicker } from "./lib/agents";
 
-ponder.on("FeeRouter:FeesClaimedAndSplit", async ({ event, context }) => {
-  const hit = agentForAddress(event.log.address);
-  if (!hit) return;
-  const { ticker } = hit.agent;
+async function handleFeesClaimedAndSplit({ event, context }: { event: any; context: any }) {
+  const ticker = await resolveTicker(event.log.address, context.db);
+  if (!ticker) return;
 
   const feeSplitBps = await context.client.readContract({
-    abi: context.contracts.FeeRouter.abi,
+    abi: FeeRouterAbi,
     address: event.log.address,
     functionName: "feeSplitBps",
   });
@@ -22,10 +22,13 @@ ponder.on("FeeRouter:FeesClaimedAndSplit", async ({ event, context }) => {
       lastPaidAt: event.block.timestamp,
       feeSplitBps: Number(feeSplitBps),
     })
-    .onConflictDoUpdate((row) => ({
+    .onConflictDoUpdate((row: { depositedFromFees: bigint; agentWalletFunded: bigint }) => ({
       depositedFromFees: row.depositedFromFees + event.args.holderShare,
       agentWalletFunded: row.agentWalletFunded + event.args.agentShare,
       lastPaidAt: event.block.timestamp,
       feeSplitBps: Number(feeSplitBps),
     }));
-});
+}
+
+ponder.on("FeeRouter:FeesClaimedAndSplit", handleFeesClaimedAndSplit);
+ponder.on("FeeRouterAuto:FeesClaimedAndSplit", handleFeesClaimedAndSplit);

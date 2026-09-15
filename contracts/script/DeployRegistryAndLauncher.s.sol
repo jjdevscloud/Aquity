@@ -17,6 +17,13 @@ import {Launcher} from "../src/Launcher.sol";
 ///   FACTORY_ADDRESS    the third-party launchpad factory — confirm its real
 ///                      ABI matches ILaunchpadFactory (AQUITY-SPEC §3.2)
 ///                      before pointing this at anything but a fork.
+///   PAYMENT_TOKEN_ADDRESS  the shared revenue-payment token (USDG or a
+///                      mock stand-in — see MockERC20.sol).
+///   ROUTER_ADDRESS     the shared swap venue Launcher auto-provisions new
+///                      pair assets through — currently must be a
+///                      MockRouter (see Launcher.sol's own doc comment on
+///                      why that coupling exists); reshape this once a real
+///                      launchpad's router is known.
 ///
 /// Run against a fork first:
 ///   forge script script/DeployRegistryAndLauncher.s.sol --rpc-url robinhood
@@ -28,6 +35,8 @@ contract DeployRegistryAndLauncher is Script {
         address owner = vm.envAddress("OWNER_ADDRESS");
         address verifier = vm.envAddress("VERIFIER_ADDRESS");
         address factory = vm.envAddress("FACTORY_ADDRESS");
+        address paymentToken = vm.envAddress("PAYMENT_TOKEN_ADDRESS");
+        address router = vm.envAddress("ROUTER_ADDRESS");
 
         vm.startBroadcast(deployerKey);
 
@@ -35,7 +44,7 @@ contract DeployRegistryAndLauncher is Script {
         // this same script, then ownership moves to OWNER_ADDRESS — same
         // pattern as DeploySplitter.s.sol's Vault handoff.
         registry = new AgentRegistry(msg.sender, verifier);
-        launcher = new Launcher(owner, address(registry), factory);
+        launcher = new Launcher(owner, address(registry), factory, paymentToken, router);
         registry.setLauncher(address(launcher));
         if (owner != msg.sender) {
             registry.transferOwnership(owner);

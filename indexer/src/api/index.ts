@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { db } from "ponder:api";
-import { agentIdentity, agentStats, agentTokenBalance } from "ponder:schema";
+import { agentIdentity, agentStats, agentTokenBalance, autoAgent } from "ponder:schema";
 import { agents as agentConfigs } from "../lib/agents";
 import verifyApp from "./verify";
 
@@ -17,10 +17,11 @@ app.route("/", verifyApp);
  * here versus an honest placeholder (prices, revenue grading, skills).
  */
 app.get("/api/agents", async (c) => {
-  const [statsRows, identityRows, balanceRows] = await Promise.all([
+  const [statsRows, identityRows, balanceRows, autoAgentRows] = await Promise.all([
     db.select().from(agentStats),
     db.select().from(agentIdentity),
     db.select().from(agentTokenBalance),
+    db.select().from(autoAgent),
   ]);
 
   const statsByTicker = new Map(statsRows.map((row) => [row.ticker, row]));
@@ -35,7 +36,16 @@ app.get("/api/agents", async (c) => {
 
   const nowSeconds = Math.floor(Date.now() / 1000);
 
-  const result = agentConfigs.map((config) => {
+  // Curated cohort (agents.config.json) plus anything launched since
+  // Launcher.sol started auto-deploying its own revenue stack — see
+  // src/Launcher.ts, which is what populates auto_agent. No operator label
+  // for those; nothing curates one.
+  const configs = [
+    ...agentConfigs,
+    ...autoAgentRows.map((row) => ({ ...row, operator: undefined as string | undefined })),
+  ];
+
+  const result = configs.map((config) => {
     const stats = statsByTicker.get(config.ticker);
     const identity = identityByTicker.get(config.ticker);
     const jobsTotal = stats?.jobsTotal ?? 0;

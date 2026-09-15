@@ -1091,13 +1091,13 @@ window.AQUITY_CHAIN = {
  chainName: 'Robinhood Chain (testnet)',
  rpcUrl: 'https://rpc.testnet.chain.robinhood.com',
  registryAddress: '0xaD55798b3C1DE63c3ad5e7ba3ED3600A098348a0',
- launcherAddress: '0x45832bF651D57275746cFDAF47BeF3384709f2bA',
- // MockLaunchpadFactory (what Launcher currently points at) ignores the pair
- // token it's given and always deploys a fresh mock agent token — see
- // MockLaunchpadFactory.sol. Real per-company pairing isn't live yet, so
- // every agent launched here is nominally paired with this one deployed
- // mock stock token regardless of which company the wizard shows as picked.
- pairStockToken: '0xb44D4e9b7Eee6c990c2e06999413132F798cf01d',
+ // Launcher.launch() now deploys the whole per-agent revenue-sharing stack
+ // itself (Vault/Splitter/FeeRouter/Distributor/Vesting), and auto-deploys
+ // (or reuses) a real per-company stock token the first time any agent
+ // picks that company — see Launcher.sol. The wizard's stock picker
+ // (STOCKS in this file) sends the company's own name/ticker straight
+ // through; nothing here hardcodes a single placeholder pair anymore.
+ launcherAddress: '0x932ff20FF0C0e7bEE1464C47EBB66D38d82A41a1',
  launchValueWei: '0x38d7ea4c68000' // 0.001 ETH, matches DeployTestnetDemo.s.sol
 };
 </script>
@@ -2190,12 +2190,14 @@ function runLaunch(){
  if(!eth || !WALLET.address){ R.launchErr='Wallet got disconnected \u2014 go back and reconnect.'; drawStep(); return; }
  ensureChain().then(function(){
   var iface=new ethers.Interface([
-   'function launch((string name,string ticker,string agentId,address agentKey,bytes agentKeySignature,string xHandle,uint256 xNonce,bytes verifierSignature,address pairStockToken,uint256 minTokensOut,address vestingReporter,uint256 vestingRevenueTarget) p) payable returns (uint256,address,address,address)'
+   'function launch((string name,string ticker,string agentId,address agentKey,bytes agentKeySignature,string xHandle,uint256 xNonce,bytes verifierSignature,string stockName,string stockSymbol,string sector,uint256 minTokensOut,address vestingReporter,uint256 vestingRevenueTarget,uint256 vaultShareBps,uint256 feeSplitBps) p) payable returns (uint256,address,address,address)'
   ]);
   var data=iface.encodeFunctionData('launch',[[
    R.name, R.ticker, R.endpoint, WALLET.address, R.sig,
    R.handle, BigInt(R.xNonce), R.verifierSignature,
-   window.AQUITY_CHAIN.pairStockToken, 0n, WALLET.address, 1000000000000000000n
+   R.stock.co, R.stock.tk, R.stock.sc,
+   0n, WALLET.address, 1000000000000000000n,
+   BigInt(R.vshare*100), BigInt(R.rsplit*100)
   ]]);
   txStage(0);
   return eth.request({method:'eth_sendTransaction', params:[{

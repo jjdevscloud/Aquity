@@ -81,3 +81,41 @@ export const agentTokenBalance = onchainTable(
     pk: primaryKey({ columns: [table.ticker, table.holder] }),
   }),
 );
+
+/**
+ * Address -> ticker resolution for agents launched through Launcher's
+ * auto-deploying `launch()` (see src/Launcher.ts and AQUITY-SPEC.md §10
+ * Phase 5) rather than curated by hand in agents.config.json. Populated
+ * once per agent from Launcher's own `AgentFullyLaunched` event, then read
+ * by every *Auto contract's handler (src/Splitter.ts etc.) to find which
+ * ticker's agent_stats row an event belongs to — the dynamic counterpart to
+ * agents.ts's static, config-file-built address map.
+ */
+export const autoAgentAddress = onchainTable("auto_agent_address", (t) => ({
+  address: t.hex().primaryKey(),
+  ticker: t.text().notNull(),
+}));
+
+/**
+ * Curatorial metadata for auto-launched agents — the counterpart to
+ * agents.config.json's hand-entered company/sector/pairSymbol for the
+ * original curated cohort. Populated once from Launcher's
+ * `AgentFullyLaunched` event plus one read of the resolved stock token's
+ * own name()/symbol(), so nothing here needs hand-entry. See
+ * src/api/index.ts, which merges this with agents.config.json.
+ */
+export const autoAgent = onchainTable("auto_agent", (t) => ({
+  ticker: t.text().primaryKey(),
+  name: t.text().notNull(),
+  sector: t.text().notNull(),
+  company: t.text().notNull(),
+  pairSymbol: t.text().notNull(),
+  pairAddress: t.hex().notNull(),
+  agentTokenAddress: t.hex().notNull(),
+  vaultAddress: t.hex().notNull(),
+  splitterAddress: t.hex().notNull(),
+  feeRouterAddress: t.hex().notNull(),
+  distributorAddress: t.hex().notNull(),
+  vestingAddress: t.hex().notNull(),
+  startBlock: t.bigint().notNull(),
+}));

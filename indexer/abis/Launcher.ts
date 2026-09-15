@@ -16,9 +16,71 @@ export const LauncherAbi = [
         "name": "_factory",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "_paymentToken",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_router",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "DEFAULT_RATE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "DUST_THRESHOLD",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "MAX_SLIPPAGE_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "STOCK_LIQUIDITY_SEED",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -29,6 +91,25 @@ export const LauncherAbi = [
         "name": "",
         "type": "address",
         "internalType": "contract ILaunchpadFactory"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "feeEscrowByStock",
+    "inputs": [
+      {
+        "name": "stockToken",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "feeEscrow",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -83,9 +164,19 @@ export const LauncherAbi = [
             "internalType": "bytes"
           },
           {
-            "name": "pairStockToken",
-            "type": "address",
-            "internalType": "address"
+            "name": "stockName",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "stockSymbol",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "sector",
+            "type": "string",
+            "internalType": "string"
           },
           {
             "name": "minTokensOut",
@@ -99,6 +190,16 @@ export const LauncherAbi = [
           },
           {
             "name": "vestingRevenueTarget",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "vaultShareBps",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "feeSplitBps",
             "type": "uint256",
             "internalType": "uint256"
           }
@@ -117,7 +218,7 @@ export const LauncherAbi = [
         "internalType": "address"
       },
       {
-        "name": "pool",
+        "name": "vault",
         "type": "address",
         "internalType": "address"
       },
@@ -144,6 +245,19 @@ export const LauncherAbi = [
   },
   {
     "type": "function",
+    "name": "paymentToken",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "registry",
     "inputs": [],
     "outputs": [
@@ -161,6 +275,19 @@ export const LauncherAbi = [
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "router",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract MockRouter"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -190,6 +317,25 @@ export const LauncherAbi = [
   },
   {
     "type": "function",
+    "name": "stockTokenBySymbol",
+    "inputs": [
+      {
+        "name": "symbolHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "stockToken",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {
@@ -216,7 +362,7 @@ export const LauncherAbi = [
   },
   {
     "type": "event",
-    "name": "AgentLaunched",
+    "name": "AgentFullyLaunched",
     "inputs": [
       {
         "name": "tokenId",
@@ -231,7 +377,55 @@ export const LauncherAbi = [
         "internalType": "address"
       },
       {
+        "name": "ticker",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "sector",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
         "name": "agentToken",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "vault",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "splitter",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "feeRouter",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "distributor",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "vesting",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -243,7 +437,7 @@ export const LauncherAbi = [
         "internalType": "address"
       },
       {
-        "name": "vesting",
+        "name": "stockToken",
         "type": "address",
         "indexed": false,
         "internalType": "address"

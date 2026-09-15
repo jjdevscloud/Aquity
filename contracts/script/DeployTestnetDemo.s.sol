@@ -108,7 +108,15 @@ contract DeployTestnetDemo is Script {
         infra.feeEscrow = new MockFeeEscrow(address(infra.stock));
 
         infra.registry = new AgentRegistry(acc.deployer, vm.addr(acc.verifierPk));
-        infra.launcher = new Launcher(acc.deployer, address(infra.registry), address(infra.factory));
+        // NOTE: Launcher.sol has since grown its own automated
+        // Vault/Splitter/FeeRouter/Distributor deployment (see its own doc
+        // comment) — this script predates that and still wires them up by
+        // hand below in _wireAgentContracts. Fixed up to compile against
+        // the current 5-arg constructor, not re-validated as a script meant
+        // to run again: re-running it would deploy a second, disconnected
+        // Vault/Splitter/etc alongside whatever launch() now sets up
+        // itself. See DeployLauncherV2.s.sol for the current deploy path.
+        infra.launcher = new Launcher(acc.deployer, address(infra.registry), address(infra.factory), address(infra.usdg), address(infra.router));
         infra.registry.setLauncher(address(infra.launcher));
 
         vm.stopBroadcast();
@@ -166,13 +174,22 @@ contract DeployTestnetDemo is Script {
             xHandle: xHandle,
             xNonce: 1,
             verifierSignature: _signXVerification(domainSeparator, acc.deployer, agentId, xHandle, 1, acc.verifierPk),
-            pairStockToken: address(infra.stock),
+            stockName: "Microsoft (tokenized)",
+            stockSymbol: "MSFTx",
+            sector: "Infrastructure ops",
             minTokensOut: 0,
             vestingReporter: acc.deployer,
-            vestingRevenueTarget: 1_000e18
+            vestingRevenueTarget: 1_000e18,
+            vaultShareBps: 3000,
+            feeSplitBps: 7000
         });
 
         vm.startBroadcast(acc.deployerPk);
+        // launch() would resolve/deploy its own MSFTx-symbol stock token
+        // here too (see Launcher._resolveStock) — this script instead
+        // pre-deploys `infra.stock` itself and wires everything by hand in
+        // _wireAgentContracts below, predating that automation. Left as-is
+        // for the historical record; not meant to run again.
         (, dep.agentToken,, dep.vesting) = infra.launcher.launch{value: LAUNCH_VALUE}(p);
         vm.stopBroadcast();
     }

@@ -1,23 +1,28 @@
 import { ponder } from "ponder:registry";
 import { agentStats } from "ponder:schema";
-import { agentForAddress } from "./lib/agents";
+import { resolveTicker } from "./lib/agents";
 
-ponder.on("Vault:Deposited", async ({ event, context }) => {
-  const hit = agentForAddress(event.log.address);
-  if (!hit) return;
-
-  await context.db
-    .insert(agentStats)
-    .values({ ticker: hit.agent.ticker, vaultBalance: event.args.amount })
-    .onConflictDoUpdate((row) => ({ vaultBalance: row.vaultBalance + event.args.amount }));
-});
-
-ponder.on("Vault:Released", async ({ event, context }) => {
-  const hit = agentForAddress(event.log.address);
-  if (!hit) return;
+async function handleDeposited({ event, context }: { event: any; context: any }) {
+  const ticker = await resolveTicker(event.log.address, context.db);
+  if (!ticker) return;
 
   await context.db
     .insert(agentStats)
-    .values({ ticker: hit.agent.ticker, vaultBalance: 0n })
-    .onConflictDoUpdate((row) => ({ vaultBalance: row.vaultBalance - event.args.amount }));
-});
+    .values({ ticker, vaultBalance: event.args.amount })
+    .onConflictDoUpdate((row: { vaultBalance: bigint }) => ({ vaultBalance: row.vaultBalance + event.args.amount }));
+}
+
+async function handleReleased({ event, context }: { event: any; context: any }) {
+  const ticker = await resolveTicker(event.log.address, context.db);
+  if (!ticker) return;
+
+  await context.db
+    .insert(agentStats)
+    .values({ ticker, vaultBalance: 0n })
+    .onConflictDoUpdate((row: { vaultBalance: bigint }) => ({ vaultBalance: row.vaultBalance - event.args.amount }));
+}
+
+ponder.on("Vault:Deposited", handleDeposited);
+ponder.on("VaultAuto:Deposited", handleDeposited);
+ponder.on("Vault:Released", handleReleased);
+ponder.on("VaultAuto:Released", handleReleased);

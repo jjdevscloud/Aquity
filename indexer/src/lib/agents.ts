@@ -1,4 +1,5 @@
 import agentsJson from "../../agents.config.json";
+import { autoAgentAddress } from "../../ponder.schema";
 
 /**
  * The hand-picked cohort's static config — see agents.config.json and the
@@ -60,7 +61,26 @@ for (const agent of agents) {
 }
 
 /** Looks up which agent (and which of its contracts) emitted an event, by
- * the log's own contract address — `event.log.address` in a handler. */
+ * the log's own contract address — `event.log.address` in a handler. Only
+ * ever finds the curated, agents.config.json cohort; see resolveTicker for
+ * the auto-launched counterpart. */
 export function agentForAddress(address: string) {
   return addressToAgent.get(address.toLowerCase());
+}
+
+/**
+ * Ticker for any contract address emitting an event a handler cares about —
+ * curated (agents.config.json, checked first, no DB round trip) or
+ * auto-launched via Launcher.sol's `AgentFullyLaunched` (src/Launcher.ts
+ * writes the auto_agent_address table this falls back to). Every handler
+ * that used to call `agentForAddress(...).agent.ticker` should call this
+ * instead — see src/Splitter.ts and friends.
+ */
+/** `db` is a handler's `context.db` — Ponder doesn't export that type standalone. */
+export async function resolveTicker(address: `0x${string}`, db: any): Promise<string | undefined> {
+  const staticHit = agentForAddress(address);
+  if (staticHit) return staticHit.agent.ticker;
+
+  const row = await db.find(autoAgentAddress, { address: address.toLowerCase() });
+  return row?.ticker;
 }

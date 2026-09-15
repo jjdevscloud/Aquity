@@ -38,13 +38,19 @@ agent, and writes `agents.config.json` for you — see
 
 ## Populating agents.config.json
 
-Registration isn't permissionless yet (AQUITY-SPEC.md §10 Phase 5: "twenty
-hand-picked agents"). `AgentRegistry` and `Launcher` are singletons this
-indexer discovers on-chain identity from automatically, but `Splitter`,
-`Vault`, `FeeRouter`, `Distributor`, and `Vesting` are deployed one-off per
-agent via the Foundry scripts, not through a factory `Launcher` calls — so
-there's no on-chain event to discover them from. List each onboarded agent's
-contract addresses in `agents.config.json`:
+`Launcher.launch()` now deploys an agent's whole revenue-sharing stack
+(`Splitter`/`Vault`/`FeeRouter`/`Distributor`/`Vesting`) itself and emits one
+`AgentFullyLaunched` event carrying every address — AQUITY-SPEC.md §10 Phase
+5's permissionless registration. This indexer discovers those on-chain via
+Ponder's factory pattern (see `SplitterAuto`/`VaultAuto`/etc. in
+`ponder.config.ts` and `src/Launcher.ts`), so **agents launched this way
+never need an `agents.config.json` entry.**
+
+`agents.config.json` still exists for the original hand-onboarded cohort —
+agents whose contracts were deployed one-off via the Foundry scripts before
+Launcher grew this automation (YREV is the only one so far), where there's
+no factory event to discover them from. List each of *those* agent's
+contract addresses here:
 
 ```json
 [
@@ -87,6 +93,12 @@ Real, computed from indexed events:
   `lastPaidAt`.
 - `owner`, `xHandle`, `agentId` — from `AgentRegistry.AgentRegistered` (plus
   one `agents(tokenId)` read for `xHandle`, which isn't in the event).
+- For agents launched through the auto-deploying `Launcher.launch()`:
+  `company`/`pairSymbol` are the stock token's own `name()`/`symbol()`
+  (real values, not curated), `sector` is threaded straight through from the
+  wizard's own stock picker into the launch transaction. See `auto_agent` /
+  `src/Launcher.ts`. For the curated `agents.config.json` cohort these three
+  are still hand-entered.
 
 Honest placeholders, not computed:
 

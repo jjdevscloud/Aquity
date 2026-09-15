@@ -108,7 +108,13 @@ contract DeployLocalDemo is Script {
         infra.feeEscrow = new MockFeeEscrow(address(infra.stock));
 
         infra.registry = new AgentRegistry(acc.deployer, vm.addr(acc.verifierPk));
-        infra.launcher = new Launcher(acc.deployer, address(infra.registry), address(infra.factory));
+        // NOTE: Launcher.sol now auto-deploys Vault/Splitter/FeeRouter/
+        // Distributor itself (see its doc comment) — this script predates
+        // that and still wires them up by hand below, so re-running it
+        // deploys a second, disconnected set alongside what launch() sets
+        // up on its own. Fixed up to compile against the current
+        // constructor only.
+        infra.launcher = new Launcher(acc.deployer, address(infra.registry), address(infra.factory), address(infra.usdg), address(infra.router));
         infra.registry.setLauncher(address(infra.launcher));
 
         vm.stopBroadcast();
@@ -170,10 +176,14 @@ contract DeployLocalDemo is Script {
             xHandle: xHandle,
             xNonce: 1,
             verifierSignature: _signXVerification(domainSeparator, acc.deployer, agentId, xHandle, 1, acc.verifierPk),
-            pairStockToken: address(infra.stock),
+            stockName: "Microsoft (tokenized)",
+            stockSymbol: "MSFTx",
+            sector: "Infrastructure ops",
             minTokensOut: 0,
             vestingReporter: acc.deployer,
-            vestingRevenueTarget: 1_000e18
+            vestingRevenueTarget: 1_000e18,
+            vaultShareBps: 3000,
+            feeSplitBps: 7000
         });
 
         vm.startBroadcast(acc.deployerPk);
