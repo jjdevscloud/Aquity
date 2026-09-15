@@ -3,10 +3,12 @@ import { cors } from "hono/cors";
 import { db } from "ponder:api";
 import { agentIdentity, ponsLaunch } from "ponder:schema";
 import verifyApp from "./verify";
+import distributionApp from "./distribution";
 
 const app = new Hono();
 app.use("/api/*", cors());
 app.route("/", verifyApp);
+app.route("/", distributionApp);
 
 /**
  * Real mainnet agents — identity from AgentRegistry, launch facts from

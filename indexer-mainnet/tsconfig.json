@@ -10,6 +10,10 @@
     "moduleResolution": "bundler",
     "module": "ESNext",
     "noEmit": true,
+    // Only src/jobs/*.ts (run standalone via `node --test`/`node`, not
+    // through Ponder's own bundler) actually use extensioned relative
+    // imports — safe globally since noEmit is already true.
+    "allowImportingTsExtensions": true,
     "lib": ["ES2022"],
     "target": "ES2022",
     "skipLibCheck": true

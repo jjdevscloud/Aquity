@@ -1,7 +1,8 @@
-import { createConfig } from "ponder";
+import { createConfig, factory } from "ponder";
 
 import { AgentRegistryAbi } from "./abis/AgentRegistry";
 import { PonsLauncherAbi } from "./abis/PonsLauncher";
+import { ERC20Abi } from "./abis/ERC20";
 
 const chainId = Number(process.env.ROBINHOOD_CHAIN_ID);
 const rpcUrl = process.env.ROBINHOOD_MAINNET_RPC_URL;
@@ -15,6 +16,12 @@ const registryAddress = process.env.AGENT_REGISTRY_ADDRESS as `0x${string}` | un
 const launcherAddress = process.env.PONS_LAUNCHER_ADDRESS as `0x${string}` | undefined;
 if (!registryAddress) throw new Error("Set AGENT_REGISTRY_ADDRESS — see .env.example");
 if (!launcherAddress) throw new Error("Set PONS_LAUNCHER_ADDRESS — see .env.example");
+const launcherStartBlock = Number(process.env.PONS_LAUNCHER_START_BLOCK ?? 0);
+
+const agentLaunchedEvent = PonsLauncherAbi.find(
+  (item) => item.type === "event" && item.name === "AgentLaunchedOnPons",
+);
+if (!agentLaunchedEvent) throw new Error("PonsLauncherAbi is missing AgentLaunchedOnPons — regenerate abis/PonsLauncher.ts");
 
 export default createConfig({
   chains: {
@@ -37,7 +44,19 @@ export default createConfig({
       chain: "robinhoodMainnet",
       abi: PonsLauncherAbi,
       address: launcherAddress,
-      startBlock: Number(process.env.PONS_LAUNCHER_START_BLOCK ?? 0),
+      startBlock: launcherStartBlock,
+    },
+    // Every agent's own token — address isn't known ahead of time, so
+    // Ponder discovers it from PonsLauncher's own AgentLaunchedOnPons event
+    // (same factory-discovery pattern the testnet indexer already uses for
+    // Launcher.sol's auto-deployed contracts). Needed for Phase B's
+    // distribution job (src/jobs/postEpochRoot.ts) to compute time-weighted
+    // holder balances — see src/AgentToken.ts.
+    AgentTokenAuto: {
+      chain: "robinhoodMainnet",
+      abi: ERC20Abi,
+      address: factory({ address: launcherAddress, event: agentLaunchedEvent, parameter: "agentToken" }),
+      startBlock: launcherStartBlock,
     },
   },
 });
